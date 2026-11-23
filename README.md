@@ -1,6 +1,4 @@
-# COM6402-Group2
-
-# COM6402 – Heat Shield
+# COM6402-Group2 – Heat Shield
 
 ## Unit and API Testing (US03b)
 
