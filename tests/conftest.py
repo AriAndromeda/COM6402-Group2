@@ -1,36 +1,29 @@
-
 import pytest
-from flask import Flask
+
 from app import app, db
 
 
 @pytest.fixture
 def client():
-    # Create a separate testing application
-    test_app = Flask(__name__)
+    """Shared in-memory SQLite DB; reset tables for each test."""
+    app.config.update(
+        TESTING=True,
+        SQLALCHEMY_DATABASE_URI="sqlite://",
+    )
 
-    test_app.config["TESTING"] = True
-    test_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite://"
+    # Point the app engine at the in-memory URI (once per test is fine; no files).
+    engines = db._app_engines.setdefault(app, {})
+    for engine in list(engines.values()):
+        engine.dispose()
+    engines.clear()
+    engines[None] = db._make_engine(
+        None,
+        {"url": app.config["SQLALCHEMY_DATABASE_URI"]},
+        app,
+    )
 
-    db.init_app(test_app)
-
-    # Copy the existing API routes
-    for rule in app.url_map.iter_rules():
-        if rule.endpoint != "static":
-            test_app.add_url_rule(
-                rule.rule,
-                endpoint=rule.endpoint,
-                view_func=app.view_functions[rule.endpoint],
-                methods=rule.methods
-            )
-
-    # Create the testing database
-    with test_app.app_context():
+    with app.app_context():
         db.create_all()
-
-    yield test_app.test_client()
-
-    # Remove testing data afterwards
-    with test_app.app_context():
+        yield app.test_client()
         db.session.remove()
         db.drop_all()
