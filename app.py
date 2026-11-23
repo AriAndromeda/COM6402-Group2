@@ -310,12 +310,3 @@ if __name__ == "__main__":
 
     # Flask's debug server is only suitable for LOCAL development.
     app.run(debug=True, host="127.0.0.1", port=5000)
-
-
-# NEXT STEPS FOR STUDENTS:
-# - Create Cooling Centre and Booking models and discuss their relationships.
-# - Agree JSON fields/endpoints with the Django frontend developer.
-# - Add automated tests for success, validation errors and missing records.
-# - Produce OpenAPI documentation and explore Swagger UI.
-# - Refactor into Models, Views and Controllers (MVC) when the team is ready.
-# - Plan authentication, authorisation and audit trails; do not deploy as-is.
