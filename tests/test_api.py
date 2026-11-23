@@ -142,3 +142,45 @@ def test_delete_request(client):
     # Confirm the deleted request no longer exists
     result = client.get(f"/api/requests/{request_id}")
     assert result.status_code == 404
+
+def test_health_endpoint(client):
+    # Check that the health endpoint responds successfully
+    response = client.get("/api/health")
+
+    # Verify the HTTP status code
+    assert response.status_code == 200
+
+    # Verify the expected JSON response
+    assert response.json == {"status": "ok"}
+
+def test_empty_description_rejected(client):
+    # Attempt to create a request with only spaces
+    response = client.post("/api/requests", json={
+        "description": "   ",
+        "category": "welfare",
+        "area": "Bolton"
+    })
+
+    # The API should reject the invalid description
+    assert response.status_code == 400
+
+    # Confirm the invalid request was not saved
+    result = client.get("/api/requests")
+    assert result.status_code == 200
+    assert result.json == []
+
+def test_missing_area_rejected(client):
+    # Attempt to create a request without an area
+    response = client.post("/api/requests", json={
+        "description": "Water assistance needed",
+        "category": "welfare"
+    })
+
+    # The API should reject the missing required field
+    assert response.status_code == 400
+    assert response.json["error"] == "area is required"
+
+    # Confirm no invalid record was saved
+    result = client.get("/api/requests")
+    assert result.status_code == 200
+    assert result.json == []

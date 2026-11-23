@@ -32,6 +32,10 @@ python -m pytest tests/ -v
 5. Handling requests that do not exist
 6. Filtering requests by area
 7. Rejecting invalid JSON input
+8. Deleting support requests
+9. Checking the health endpoint
+10. Rejecting whitespace-only descriptions
+11. Rejecting requests without an area
 
 ### Test Database
 
