@@ -122,3 +122,23 @@ def test_invalid_json_input(client):
     result = client.get("/api/requests")
     assert result.json == []
 
+def test_delete_request(client):
+    # Create a support request
+    response = client.post("/api/requests", json={
+        "description": "Water assistance needed",
+        "category": "welfare",
+        "area": "Bolton"
+    })
+
+    assert response.status_code == 201
+    request_id = response.json["id"]
+
+    # Delete the support request
+    deleted = client.delete(f"/api/requests/{request_id}")
+
+    # Successful deletion returns HTTP 204
+    assert deleted.status_code == 204
+
+    # Confirm the deleted request no longer exists
+    result = client.get(f"/api/requests/{request_id}")
+    assert result.status_code == 404
