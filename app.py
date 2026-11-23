@@ -15,6 +15,8 @@ This is a TEACHING EXAMPLE, not a finished Heat Shield application.
 There is no authentication: run locally only, using fictional data.
 """
 
+import os
+
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 
@@ -26,7 +28,7 @@ db = SQLAlchemy(app)
 
 # Allowed values for enumerated fields (US04a validation).
 ALLOWED_PRIORITIES = ("low", "medium", "high", "critical")
-ALLOWED_STATUSES = ("new", "in-progress", "completed")
+ALLOWED_STATUSES = ("new", "in progress", "completed")
 ALLOWED_CATEGORIES = ("welfare", "cooling", "practical-assistance", "medical")
 
 
@@ -46,8 +48,9 @@ ENUM_FIELDS = {
 class SupportRequest(db.Model):
     """A support request for the Heat Shield cooling-centres service.
 
-    The ``area`` field is stored in lowercase to ensure case-insensitive
-    lookups and filtering (e.g. "Bolton" and "bolton" match the same record).
+    The ``area`` field is stored as provided (original casing preserved).
+    Filter queries normalise area to lowercase so lookups are case-insensitive
+    (e.g. ``?area=Bolton`` matches a record stored as "Bolton").
     """
 
     id = db.Column(db.Integer, primary_key=True)
@@ -84,7 +87,13 @@ def list_requests():
     for field in ("category", "area", "priority", "status"):
         value = request.args.get(field)
         if value:
-            query = query.where(getattr(SupportRequest, field) == value)
+            # Area filter is case-insensitive (records stored as-is).
+            if field == "area":
+                query = query.where(
+                    db.func.lower(getattr(SupportRequest, field)) == value.lower()
+                )
+            else:
+                query = query.where(getattr(SupportRequest, field) == value)
 
     records = db.session.scalars(query.order_by(SupportRequest.id)).all()
     return jsonify([record.to_dict() for record in records])
@@ -106,10 +115,7 @@ def _validate_enum(value, field_name, allowed):
         return None, f"{field_name} is required"
     cleaned = value.strip().lower()
     if cleaned not in allowed:
-        return None, (
-            f"{field_name} must be one of: "
-            + ", ".join(sorted(allowed))
-        )
+        return None, (f"{field_name} must be one of: " + ", ".join(sorted(allowed)))
     return cleaned, None
 
 
@@ -128,9 +134,7 @@ def create_request():
             return jsonify({"error": f"{field} is required"}), 400
 
     # Validate category against allowed values.
-    cat_clean, err = _validate_enum(
-        data["category"], "category", ALLOWED_CATEGORIES
-    )
+    cat_clean, err = _validate_enum(data["category"], "category", ALLOWED_CATEGORIES)
     if err:
         return jsonify({"error": err}), 400
 
@@ -148,9 +152,7 @@ def create_request():
         priority_clean = "medium"
 
     if isinstance(status_raw, str) and status_raw.strip():
-        status_clean, err = _validate_enum(
-            status_raw, "status", ALLOWED_STATUSES
-        )
+        status_clean, err = _validate_enum(status_raw, "status", ALLOWED_STATUSES)
         if err:
             return jsonify({"error": err}), 400
     else:
@@ -159,11 +161,17 @@ def create_request():
     # Issue #2: enforce column length limits at the API boundary.
     desc_raw = data["description"].strip()
     if len(desc_raw) > MAX_DESCRIPTION_LENGTH:
-        return jsonify({"error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"}), 400
+        return jsonify(
+            {
+                "error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"
+            }
+        ), 400
 
-    area_raw = data["area"].strip().lower()
+    area_raw = data["area"].strip()
     if len(area_raw) > MAX_AREA_LENGTH:
-        return jsonify({"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}), 400
+        return jsonify(
+            {"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}
+        ), 400
 
     record = SupportRequest(
         description=desc_raw,
@@ -207,15 +215,21 @@ def update_request(request_id):
             if not isinstance(desc_raw, str) or not desc_raw:
                 return jsonify({"error": f"description is required"}), 400
             if len(desc_raw) > MAX_DESCRIPTION_LENGTH:
-                return jsonify({"error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"}), 400
+                return jsonify(
+                    {
+                        "error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"
+                    }
+                ), 400
             cleaned_values[field_name] = desc_raw
 
         elif field_name == "area":
-            area_raw = value.strip().lower() if isinstance(value, str) else value
+            area_raw = value.strip() if isinstance(value, str) else value
             if not isinstance(area_raw, str) or not area_raw:
                 return jsonify({"error": f"area is required"}), 400
             if len(area_raw) > MAX_AREA_LENGTH:
-                return jsonify({"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}), 400
+                return jsonify(
+                    {"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}
+                ), 400
             cleaned_values[field_name] = area_raw
 
     # Phase 2 — apply all validated changes at once (Issue #1).
@@ -238,6 +252,20 @@ def delete_request(request_id):
     return "", 204  # Success: no response body.
 
 
+def get_port():
+    """Return the configured PORT, defaulting to 5000."""
+    raw_port = os.getenv("PORT", "5000")
+    try:
+        port = int(raw_port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("PORT must be an integer") from exc
+
+    if not 1 <= port <= 65535:
+        raise ValueError("PORT must be between 1 and 65535")
+
+    return port
+
+
 if __name__ == "__main__":
     # Create the table if it does not already exist.
     # Later: consider proper database migrations when changing the schema.
@@ -245,13 +273,4 @@ if __name__ == "__main__":
         db.create_all()
 
     # Flask's debug server is only suitable for LOCAL development.
-    app.run(debug=True, host="127.0.0.1", port=5000)
-
-
-# NEXT STEPS FOR STUDENTS:
-# - Create Cooling Centre and Booking models and discuss their relationships.
-# - Agree JSON fields/endpoints with the Django frontend developer.
-# - Add automated tests for success, validation errors and missing records.
-# - Produce OpenAPI documentation and explore Swagger UI.
-# - Refactor into Models, Views and Controllers (MVC) when the team is ready.
-# - Plan authentication, authorisation and audit trails; do not deploy as-is.
+    app.run(debug=True, host="127.0.0.1", port=get_port())
