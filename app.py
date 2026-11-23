@@ -274,8 +274,7 @@ def create_booking():
     if centre is None:
         return jsonify({"error": "Centre not found"}), 404
 
-    # Full / closed rejection is US04d — happy path assumes an open centre
-    # with enough spaces for this Sprint 1 slice.
+    # Happy-path booking: centre must be open with enough remaining spaces.
     if centre.spaces_available < spaces_required:
         return jsonify({"error": "Not enough spaces available"}), 409
     if centre.status.lower() != "open":
@@ -314,9 +313,9 @@ if __name__ == "__main__":
 
 
 # NEXT STEPS FOR STUDENTS:
-# - US04d: reject bookings for full or closed centres (covered lightly above).
+# - Create Cooling Centre and Booking models and discuss their relationships.
 # - Agree JSON fields/endpoints with the Django frontend developer.
-# - Expand automated tests for validation errors and missing records.
+# - Add automated tests for success, validation errors and missing records.
 # - Produce OpenAPI documentation and explore Swagger UI.
 # - Refactor into Models, Views and Controllers (MVC) when the team is ready.
 # - Plan authentication, authorisation and audit trails; do not deploy as-is.

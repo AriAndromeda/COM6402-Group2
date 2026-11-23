@@ -4,14 +4,14 @@ from app import app, db
 
 
 @pytest.fixture
-def client(tmp_path):
-    """Isolated SQLite DB per test, using the real Flask app."""
+def client():
+    """Shared in-memory SQLite DB; reset tables for each test."""
     app.config.update(
         TESTING=True,
-        SQLALCHEMY_DATABASE_URI=f"sqlite:///{tmp_path / 'test.db'}",
+        SQLALCHEMY_DATABASE_URI="sqlite://",
     )
 
-    # Rebuild the default engine against the per-test URI.
+    # Point the app engine at the in-memory URI (once per test is fine; no files).
     engines = db._app_engines.setdefault(app, {})
     for engine in list(engines.values()):
         engine.dispose()
