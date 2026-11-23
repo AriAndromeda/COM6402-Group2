@@ -24,8 +24,26 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///heatshield.db"
 db = SQLAlchemy(app)
 
 
+# Field length limits (mirrors model columns for client-side validation).
+MAX_DESCRIPTION_LENGTH = 500
+MAX_AREA_LENGTH = 80
+
+# Mapping of enum fields to their allowed values — single source of truth.
+ENUM_FIELDS = {
+    "category": ALLOWED_CATEGORIES,
+    "priority": ALLOWED_PRIORITIES,
+    "status": ALLOWED_STATUSES,
+}
+
+
 # 2. MODEL: a Python class representing a database table.
 class SupportRequest(db.Model):
+    """A support request for the Heat Shield cooling-centres service.
+
+    The ``area`` field is stored in lowercase to ensure case-insensitive
+    lookups and filtering (e.g. "Bolton" and "bolton" match the same record).
+    """
+
     id = db.Column(db.Integer, primary_key=True)
     description = db.Column(db.String(500), nullable=False)
     category = db.Column(db.String(50), nullable=False)
