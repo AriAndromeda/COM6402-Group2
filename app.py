@@ -18,7 +18,11 @@ There is no authentication: run locally only, using fictional data.
 """
 
 import os
+import hashlib
+import secrets
+from functools import wraps
 
+from flask import g
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 
@@ -114,6 +118,191 @@ class Booking(db.Model):
             "spaces_required": self.spaces_required,
             "status": self.status,
         }
+
+    # US06 - Staff identity and audit models
+
+from datetime import datetime, timezone
+
+
+class StaffUser(db.Model):
+    """Store staff identities and their access roles."""
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    username = db.Column(
+        db.String(80),
+        unique=True,
+        nullable=False
+    )
+
+    role = db.Column(
+        db.String(20),
+        nullable=False,
+        default="staff"
+    )
+
+    token_hash = db.Column(
+        db.String(64),
+        unique=True,
+        nullable=False
+    )
+
+    is_active = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True
+    )
+
+
+class AuditLog(db.Model):
+    """Record successful actions performed by staff."""
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    staff_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("staff_user.id"),
+        nullable=False
+    )
+
+    action = db.Column(
+        db.String(100),
+        nullable=False
+    )
+
+    resource_type = db.Column(
+        db.String(50),
+        nullable=False
+    )
+
+    resource_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
+
+    timestamp = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "staff_user_id": self.staff_user_id,
+            "action": self.action,
+            "resource_type": self.resource_type,
+            "resource_id": self.resource_id,
+            "timestamp": self.timestamp.isoformat()
+        }
+
+
+    # US06 - Staff authentication and authorisation
+
+def require_staff(*allowed_roles):
+    """Restrict an endpoint to authenticated, authorised staff."""
+
+    def decorator(view_function):
+        @wraps(view_function)
+        def wrapper(*args, **kwargs):
+
+            # Read the Bearer token from the request header
+            authorization = request.headers.get("Authorization", "")
+            parts = authorization.split()
+
+            if (
+                len(parts) != 2
+                or parts[0].lower() != "bearer"
+                or not parts[1]
+            ):
+                return jsonify({
+                    "error": "Authentication required"
+                }), 401
+
+            # Hash the supplied token before database lookup
+            token_hash = hashlib.sha256(
+                parts[1].encode("utf-8")
+            ).hexdigest()
+
+            staff = db.session.scalar(
+                db.select(StaffUser).where(
+                    StaffUser.token_hash == token_hash
+                )
+            )
+
+            # Reject unknown or inactive staff accounts
+            if staff is None or not staff.is_active:
+                return jsonify({
+                    "error": "Invalid or inactive credentials"
+                }), 401
+
+            # Check whether the staff role is authorised
+            if staff.role not in allowed_roles:
+                return jsonify({
+                    "error": "Insufficient permissions"
+                }), 403
+
+            # Make the authenticated identity available to the route
+            g.current_staff = staff
+
+            return view_function(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+def generate_staff_token():
+    """Generate a cryptographically secure staff access token."""
+    return secrets.token_urlsafe(32)
+
+
+def provision_staff(username, role="staff"):
+    """Provision a staff account without exposing a public registration API."""
+
+    # Validate the username
+    if not isinstance(username, str) or not username.strip():
+        raise ValueError("A valid username is required")
+
+    username = username.strip()
+
+    if len(username) > 80:
+        raise ValueError("Username must not exceed 80 characters")
+
+    # Restrict accounts to approved roles
+    if role not in ("staff", "supervisor"):
+        raise ValueError("Invalid staff role")
+
+    # Prevent duplicate staff accounts
+    existing_staff = db.session.scalar(
+        db.select(StaffUser).where(
+            StaffUser.username == username
+        )
+    )
+
+    if existing_staff is not None:
+        raise ValueError("Staff username already exists")
+
+    # Generate a cryptographically secure access token
+    token = generate_staff_token()
+
+    # Store only the token hash
+    token_hash = hashlib.sha256(
+        token.encode("utf-8")
+    ).hexdigest()
+
+    staff = StaffUser(
+        username=username,
+        role=role,
+        token_hash=token_hash,
+        is_active=True
+    )
+
+    db.session.add(staff)
+    db.session.commit()
+
+    # Return the token once to the trusted provisioning caller
+    return token
+
 
 
 # 3. HEALTH CHECK: a simple way to check whether Flask is running.
@@ -231,6 +420,7 @@ def create_request():
 
 # 7. UPDATE: PATCH only the fields supplied in the request.
 @app.patch("/api/requests/<int:request_id>")
+@require_staff("staff", "supervisor")
 def update_request(request_id):
     record = db.session.get(SupportRequest, request_id)
     if record is None:
@@ -276,28 +466,62 @@ def update_request(request_id):
                 ), 400
             cleaned_values[field_name] = area_raw
 
-    # Phase 2 — apply all validated changes at once (Issue #1).
+
+    # Phase 2: Apply validated changes
     for field_name, value in cleaned_values.items():
         setattr(record, field_name, value)
 
+    # US06: Record the authorised staff action
+    audit = AuditLog(
+        staff_user_id=g.current_staff.id,
+        action="update",
+        resource_type="support_request",
+        resource_id=record.id
+    )
+
+    # Save the update and audit record in one transaction
+    db.session.add(audit)
     db.session.commit()
+
     return jsonify(record.to_dict())
+
 
 
 # 8. DELETE: included to illustrate CRUD; not necessarily appropriate
 # for real support records, where cancellation/retention may be preferable.
 @app.delete("/api/requests/<int:request_id>")
+@require_staff("staff", "supervisor")
 def delete_request(request_id):
     record = db.session.get(SupportRequest, request_id)
     if record is None:
         return jsonify({"error": "Request not found"}), 404
+
+    # Preserve the request ID before deletion
+    deleted_request_id = record.id
+
+    # Delete the support request
     db.session.delete(record)
+
+    # US06: Record which staff member performed the deletion
+    audit = AuditLog(
+        staff_user_id=g.current_staff.id,
+        action="delete",
+        resource_type="support_request",
+        resource_id=deleted_request_id
+    )
+
+    db.session.add(audit)
+
+    # Commit the deletion and audit record together
     db.session.commit()
-    return "", 204  # Success: no response body.
+
+    return "", 204
+ # Success: no response body.
 
 
 # 9. COOLING CENTRES: create and retrieve (needed to book spaces).
 @app.post("/api/centres")
+@require_staff("staff", "supervisor")
 def create_centre():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -329,9 +553,26 @@ def create_centre():
         opening_hours=opening_hours.strip(),
         status=status.strip().lower(),
     )
+
+    # Stage the cooling centre and obtain its database ID
     db.session.add(record)
+    db.session.flush()
+
+    # US06: Record the authorised staff action
+    audit = AuditLog(
+        staff_user_id=g.current_staff.id,
+        action="create",
+        resource_type="cooling_centre",
+        resource_id=record.id
+    )
+
+    db.session.add(audit)
+
+    # Commit the centre and audit record together
     db.session.commit()
+
     return jsonify(record.to_dict()), 201
+
 
 
 @app.get("/api/centres")
@@ -352,6 +593,7 @@ def get_centre(centre_id):
 
 # 10. BOOKINGS (US04c happy path): reserve spaces and reduce availability.
 @app.post("/api/bookings")
+@require_staff("staff", "supervisor")
 def create_booking():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -390,6 +632,8 @@ def create_booking():
     if centre.status.lower() != "open":
         return jsonify({"error": "Centre is closed"}), 409
 
+
+    # Create the booking
     booking = Booking(
         request_id=request_id,
         centre_id=centre_id,
@@ -398,10 +642,29 @@ def create_booking():
         spaces_required=spaces_required,
         status="confirmed",
     )
+
+    # Reduce the centre's available capacity
     centre.spaces_available -= spaces_required
+
+    # Stage the booking and obtain its database ID
     db.session.add(booking)
+    db.session.flush()
+
+    # US06: Record the successful booking action
+    audit = AuditLog(
+        staff_user_id=g.current_staff.id,
+        action="create",
+        resource_type="booking",
+        resource_id=booking.id
+    )
+
+    db.session.add(audit)
+
+    # Commit the booking, capacity change and audit together
     db.session.commit()
+
     return jsonify(booking.to_dict()), 201
+
 
 
 @app.get("/api/bookings/<int:booking_id>")

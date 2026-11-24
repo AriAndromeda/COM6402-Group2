@@ -1,5 +1,7 @@
+import hashlib
 import pytest
 
+from app import StaffUser, db
 from app import app, db
 
 
@@ -27,3 +29,26 @@ def client():
         yield app.test_client()
         db.session.remove()
         db.drop_all()
+
+
+@pytest.fixture
+def staff_headers(client):
+    """Provide credentials for an authorised test staff member."""
+
+    token = "us06-regression-test-token"
+
+    staff = StaffUser(
+        username="regression_staff",
+        role="staff",
+        token_hash=hashlib.sha256(
+            token.encode("utf-8")
+        ).hexdigest(),
+        is_active=True
+    )
+
+    db.session.add(staff)
+    db.session.commit()
+
+    return {
+        "Authorization": f"Bearer {token}"
+    }

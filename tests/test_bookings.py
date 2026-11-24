@@ -14,7 +14,9 @@ def _create_request(client):
     return response.json["id"]
 
 
-def _create_centre(client, capacity=10):
+def _create_centre(client, staff_headers, capacity=10):
+    """Create a cooling centre using authorised staff credentials."""
+
     response = client.post(
         "/api/centres",
         json={
@@ -24,10 +26,11 @@ def _create_centre(client, capacity=10):
             "opening_hours": "09:00-17:00",
             "status": "open",
         },
+        headers=staff_headers,
     )
+
     assert response.status_code == 201
     return response.json
-
 
 def test_cooling_centre_to_dict():
     from app import CoolingCentre
@@ -75,9 +78,9 @@ def test_booking_to_dict():
     }
 
 
-def test_create_booking_happy_path(client):
+def test_create_booking_happy_path(client, staff_headers):
     request_id = _create_request(client)
-    centre = _create_centre(client, capacity=10)
+    centre = _create_centre(client, staff_headers, capacity=10)
     centre_id = centre["id"]
     assert centre["spaces_available"] == 10
 
@@ -90,6 +93,7 @@ def test_create_booking_happy_path(client):
             "booking_time": "14:00",
             "spaces_required": 2,
         },
+        headers=staff_headers,
     )
 
     assert response.status_code == 201
