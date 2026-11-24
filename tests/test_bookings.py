@@ -1,4 +1,4 @@
-"""US04c – happy-path cooling-space bookings (TDD)."""
+"""US04c happy-path bookings and US04d rejection cases."""
 
 
 def _create_request(client):
@@ -14,7 +14,7 @@ def _create_request(client):
     return response.json["id"]
 
 
-def _create_centre(client, capacity=10):
+def _create_centre(client, capacity=10, status="open"):
     response = client.post(
         "/api/centres",
         json={
@@ -22,7 +22,7 @@ def _create_centre(client, capacity=10):
             "area": "Bolton",
             "capacity": capacity,
             "opening_hours": "09:00-17:00",
-            "status": "open",
+            "status": status,
         },
     )
     assert response.status_code == 201
@@ -112,3 +112,69 @@ def test_create_booking_happy_path(client):
     booking = client.get(f"/api/bookings/{body['id']}")
     assert booking.status_code == 200
     assert booking.json["id"] == body["id"]
+
+
+def test_reject_booking_when_centre_full(client):
+    """US04d: full centres are rejected with JSON error + HTTP 409."""
+    request_id = _create_request(client)
+    centre = _create_centre(client, capacity=2)
+    centre_id = centre["id"]
+
+    # Fill the centre completely.
+    first = client.post(
+        "/api/bookings",
+        json={
+            "request_id": request_id,
+            "centre_id": centre_id,
+            "booking_date": "2026-11-24",
+            "booking_time": "14:00",
+            "spaces_required": 2,
+        },
+    )
+    assert first.status_code == 201
+
+    # Another request tries to book the now-full centre.
+    other_request_id = _create_request(client)
+    response = client.post(
+        "/api/bookings",
+        json={
+            "request_id": other_request_id,
+            "centre_id": centre_id,
+            "booking_date": "2026-11-24",
+            "booking_time": "15:00",
+            "spaces_required": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert "error" in response.json
+    assert "spaces" in response.json["error"].lower() or "enough" in response.json["error"].lower()
+
+    centre_after = client.get(f"/api/centres/{centre_id}")
+    assert centre_after.status_code == 200
+    assert centre_after.json["spaces_available"] == 0
+
+
+def test_reject_booking_when_centre_closed(client):
+    """US04d: closed centres are rejected with JSON error + HTTP 409."""
+    request_id = _create_request(client)
+    centre = _create_centre(client, capacity=10, status="closed")
+    centre_id = centre["id"]
+
+    response = client.post(
+        "/api/bookings",
+        json={
+            "request_id": request_id,
+            "centre_id": centre_id,
+            "booking_date": "2026-11-24",
+            "booking_time": "14:00",
+            "spaces_required": 2,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json["error"] == "Centre is closed"
+
+    centre_after = client.get(f"/api/centres/{centre_id}")
+    assert centre_after.status_code == 200
+    assert centre_after.json["spaces_available"] == 10

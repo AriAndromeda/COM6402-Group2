@@ -350,7 +350,7 @@ def get_centre(centre_id):
     return jsonify(record.to_dict())
 
 
-# 10. BOOKINGS (US04c happy path): reserve spaces and reduce availability.
+# 10. BOOKINGS: reserve spaces (US04c) and reject full/closed centres (US04d).
 @app.post("/api/bookings")
 def create_booking():
     data = request.get_json(silent=True)
@@ -384,7 +384,7 @@ def create_booking():
     if centre is None:
         return jsonify({"error": "Centre not found"}), 404
 
-    # Happy-path booking: centre must be open with enough remaining spaces.
+    # US04d: check capacity and open/closed status before accepting a booking.
     if centre.spaces_available < spaces_required:
         return jsonify({"error": "Not enough spaces available"}), 409
     if centre.status.lower() != "open":
