@@ -1,107 +1,122 @@
 
+"""US05 – Search, Filtering and API Testing.
+
+Tests cover individual filters, combined queries, unmatched searches,
+invalid filter values and the API health-check endpoint.
+
+Framework: pytest
+Run: python -m pytest tests/test_us05.py -v
+"""
+
 import pytest
 
+
 def test_filter_by_category(client):
-    # Create two support requests with different categories
-    client.post("/api/requests", json={
+    """Verify that requests can be filtered by category."""
+    response = client.post("/api/requests", json={
         "description": "Water assistance needed",
         "category": "welfare",
         "area": "Bolton"
     })
+    assert response.status_code == 201
 
-    client.post("/api/requests", json={
+    response = client.post("/api/requests", json={
         "description": "Cooling centre required",
         "category": "cooling",
         "area": "Manchester"
     })
+    assert response.status_code == 201
 
-    # Request only welfare support records
+    # Retrieve only welfare requests
     response = client.get("/api/requests?category=welfare")
 
-    # Verify the HTTP response
     assert response.status_code == 200
-
-    # Verify only the matching request is returned
     assert len(response.json) == 1
     assert response.json[0]["category"] == "welfare"
     assert response.json[0]["description"] == "Water assistance needed"
 
+
 def test_filter_by_status(client):
-    # Create a new support request
-    client.post("/api/requests", json={
+    """Verify that requests can be filtered by status."""
+    response = client.post("/api/requests", json={
         "description": "Water assistance needed",
         "category": "welfare",
         "area": "Bolton",
         "status": "new"
     })
+    assert response.status_code == 201
 
-    # Create a request already in progress
-    client.post("/api/requests", json={
+    response = client.post("/api/requests", json={
         "description": "Cooling assistance required",
         "category": "cooling",
         "area": "Manchester",
         "status": "in progress"
     })
+    assert response.status_code == 201
 
-    # Filter requests by status
+    # Retrieve only requests that are in progress
     response = client.get("/api/requests?status=in%20progress")
 
-    # Verify the response
     assert response.status_code == 200
     assert len(response.json) == 1
     assert response.json[0]["status"] == "in progress"
     assert response.json[0]["description"] == "Cooling assistance required"
 
+
 def test_filter_by_priority(client):
-    # Create requests with different priorities
-    client.post("/api/requests", json={
+    """Verify that requests can be filtered by priority."""
+    response = client.post("/api/requests", json={
         "description": "Urgent water assistance",
         "category": "welfare",
         "area": "Bolton",
         "priority": "high"
     })
+    assert response.status_code == 201
 
-    client.post("/api/requests", json={
+    response = client.post("/api/requests", json={
         "description": "General cooling advice",
         "category": "cooling",
         "area": "Manchester",
         "priority": "low"
     })
+    assert response.status_code == 201
 
-    # Filter for high-priority requests
+    # Retrieve only high-priority requests
     response = client.get("/api/requests?priority=high")
 
-    # Verify only the high-priority request is returned
     assert response.status_code == 200
     assert len(response.json) == 1
     assert response.json[0]["priority"] == "high"
     assert response.json[0]["description"] == "Urgent water assistance"
 
+
 def test_filter_by_area(client):
-    # Create requests in different areas
-    client.post("/api/requests", json={
+    """Verify case-insensitive filtering by geographical area."""
+    response = client.post("/api/requests", json={
         "description": "Water assistance needed",
         "category": "welfare",
         "area": "Bolton"
     })
+    assert response.status_code == 201
 
-    client.post("/api/requests", json={
+    response = client.post("/api/requests", json={
         "description": "Cooling assistance needed",
         "category": "cooling",
         "area": "Manchester"
     })
+    assert response.status_code == 201
 
-    # Search using lowercase to verify case-insensitive filtering
+    # Lowercase search should match the stored value "Bolton"
     response = client.get("/api/requests?area=bolton")
 
-    # Verify only the Bolton request is returned
     assert response.status_code == 200
     assert len(response.json) == 1
     assert response.json[0]["area"] == "Bolton"
     assert response.json[0]["description"] == "Water assistance needed"
 
+
 def test_combined_filters(client):
-    # Create three support requests
+    """Verify that all four filters work together."""
     requests = [
         {
             "description": "Urgent water assistance",
@@ -130,7 +145,7 @@ def test_combined_filters(client):
         response = client.post("/api/requests", json=data)
         assert response.status_code == 201
 
-    # Apply all four filters together
+    # Apply category, area, priority and status filters
     response = client.get(
         "/api/requests",
         query_string={
@@ -141,20 +156,18 @@ def test_combined_filters(client):
         }
     )
 
-    # Verify only the matching request is returned
     assert response.status_code == 200
     assert len(response.json) == 1
     assert response.json[0]["description"] == "Urgent water assistance"
 
+
 def test_health_check(client):
-    # Request the API health status
+    """Verify that the API health-check endpoint responds correctly."""
     response = client.get("/api/health")
 
-    # Verify that the API responds successfully
     assert response.status_code == 200
-
-    # Verify the expected JSON response
     assert response.json == {"status": "ok"}
+
 
 @pytest.mark.parametrize(
     "filters",
@@ -170,9 +183,8 @@ def test_health_check(client):
         }
     ]
 )
-
 def test_filters_with_no_matching_results(client, filters):
-    # Create an existing support request
+    """Verify that searches without matches return an empty list."""
     response = client.post("/api/requests", json={
         "description": "Water assistance needed",
         "category": "welfare",
@@ -180,18 +192,16 @@ def test_filters_with_no_matching_results(client, filters):
         "priority": "low",
         "status": "new"
     })
-
     assert response.status_code == 201
 
-    # Apply filters that should not match this request
     response = client.get(
         "/api/requests",
         query_string=filters
     )
 
-    # The API should return an empty list
     assert response.status_code == 200
     assert response.json == []
+
 
 @pytest.mark.parametrize(
     "filters, expected_descriptions",
@@ -222,7 +232,7 @@ def test_filters_with_no_matching_results(client, filters):
 def test_multiple_filter_combinations(
     client, filters, expected_descriptions
 ):
-    # Create support requests with different attributes
+    """Verify two-, three- and four-parameter filter combinations."""
     requests = [
         {
             "description": "Urgent water support",
@@ -251,7 +261,6 @@ def test_multiple_filter_combinations(
         response = client.post("/api/requests", json=data)
         assert response.status_code == 201
 
-    # Apply the selected combination of filters
     response = client.get(
         "/api/requests",
         query_string=filters
@@ -259,7 +268,7 @@ def test_multiple_filter_combinations(
 
     assert response.status_code == 200
 
-    # Verify the exact matching records
+    # Compare the complete set of matching descriptions
     actual_descriptions = [
         item["description"] for item in response.json
     ]
@@ -267,6 +276,7 @@ def test_multiple_filter_combinations(
     assert sorted(actual_descriptions) == sorted(
         expected_descriptions
     )
+
 
 @pytest.mark.parametrize(
     "filters",
@@ -277,9 +287,8 @@ def test_multiple_filter_combinations(
         {"area": "NonexistentArea"}
     ]
 )
-
 def test_invalid_filter_values(client, filters):
-    # Create a valid support request
+    """Verify existing behaviour for unsupported filter values."""
     response = client.post("/api/requests", json={
         "description": "Water assistance needed",
         "category": "welfare",
@@ -287,15 +296,13 @@ def test_invalid_filter_values(client, filters):
         "priority": "high",
         "status": "new"
     })
-
     assert response.status_code == 201
 
-    # Search using an invalid or unmatched filter value
     response = client.get(
         "/api/requests",
         query_string=filters
     )
 
-    # Verify the current API filtering behaviour
+    # The current API returns an empty list, not HTTP 400
     assert response.status_code == 200
     assert response.json == []
