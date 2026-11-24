@@ -7,12 +7,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_PYTHON="$SCRIPT_DIR/.env/bin/python"
 
-if [ -x "$VENV_PYTHON" ]; then
-    PYTHON="$VENV_PYTHON"
+# Activate virtual environment if it exists.
+if [ -f "$SCRIPT_DIR/.env/bin/activate" ]; then
+    echo "Activating virtual environment..."
+    source "$SCRIPT_DIR/.env/bin/activate"
 else
-    PYTHON="python"
+    echo "Warning: .env not found — using system Python."
 fi
 
 FLASK_PORT=5000
@@ -25,7 +26,7 @@ if [ "$HEALTH_CHECK" = "200" ]; then
     echo "Flask API is already running on port 5000 — skipping."
 else
     echo "Starting Flask API on port 5000..."
-    PORT=5000 "$PYTHON" app.py > /tmp/flask.log 2>&1 &
+    PORT=5000 python app.py > /tmp/flask.log 2>&1 &
 
     for i in $(seq 1 10); do
         HC=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000/api/health 2>/dev/null || echo "000")
@@ -45,7 +46,7 @@ else
         pkill -f "python app.py" 2>/dev/null || true
         sleep 0.5
 
-        PORT=5001 "$PYTHON" app.py > /tmp/flask.log 2>&1 &
+        PORT=5001 python app.py > /tmp/flask.log 2>&1 &
 
         for i in $(seq 1 10); do
             HC=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/api/health 2>/dev/null || echo "000")
@@ -65,10 +66,10 @@ else
 fi
 
 echo "Applying Django migrations..."
-DJANGO_FLASK_API_URL="$DJANGO_API_URL" "$PYTHON" manage.py migrate --noinput 2>&1 | grep -v "^$" || true
+DJANGO_FLASK_API_URL="$DJANGO_API_URL" python manage.py migrate --noinput 2>&1 | grep -v "^$" || true
 
 echo "Starting Django dashboard on port 8000..."
-DJANGO_FLASK_API_URL="$DJANGO_API_URL" "$PYTHON" manage.py runserver 8000 &
+DJANGO_FLASK_API_URL="$DJANGO_API_URL" python manage.py runserver 8000 &
 DJANGO_PID=$!
 
 # Kill Flask when Ctrl+C is pressed.
