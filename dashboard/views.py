@@ -1,10 +1,13 @@
 """Dashboard view – fetches data from the Flask API and renders metrics."""
 
+import logging
 import os
 
 import requests
 from django.conf import settings
 from django.shortcuts import render
+
+logger = logging.getLogger(__name__)
 
 # Base URL for the Flask backend API (readable via DJANGO_FLASK_API_URL env var).
 API_BASE = os.environ.get(
@@ -20,7 +23,7 @@ def _get_json(path):
         if resp.status_code == 200:
             return resp.json()
     except (requests.RequestException, ValueError):
-        pass
+        logger.warning("Flask API unreachable at %s%s", API_BASE, path)
     return []
 
 
