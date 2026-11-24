@@ -28,7 +28,12 @@ def _get_json(path):
 
 
 def index(request):
-    """Render the staff dashboard with request metrics and centre availability."""
+    """Render the staff dashboard with request metrics and centre availability.
+
+    .. note::
+       Authentication is not implemented yet (see US08). Anyone who can reach
+       this URL sees all support-request data. Add auth before any deployment.
+    """
 
     # Fetch support requests from Flask API.
     requests_data = _get_json("/requests")
