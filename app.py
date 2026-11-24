@@ -18,6 +18,7 @@ There is no authentication: run locally only, using fictional data.
 """
 
 import os
+from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
@@ -61,6 +62,16 @@ class SupportRequest(db.Model):
     area = db.Column(db.String(80), nullable=False)
     priority = db.Column(db.String(20), nullable=False, default="medium")
     status = db.Column(db.String(20), nullable=False, default="new")
+    created_at = db.Column(db.DateTime, nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        now = datetime.now(timezone.utc)
+        if self.created_at is None:
+            self.created_at = now
+        if self.updated_at is None:
+            self.updated_at = now
 
     def to_dict(self):
         """Turn a database object into JSON-friendly data."""
@@ -71,6 +82,8 @@ class SupportRequest(db.Model):
             "area": self.area,
             "priority": self.priority,
             "status": self.status,
+            "created_at": str(self.created_at),
+            "updated_at": str(self.updated_at),
         }
 
 
