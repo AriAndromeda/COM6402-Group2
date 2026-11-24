@@ -19,9 +19,11 @@ Check whether the Flask API is responding.
 
 Successful response (200 OK):
 
+```json
 {
   "status": "ok"
 }
+```
 
 ## 2. List and Filter Support Requests
 
@@ -128,14 +130,43 @@ Endpoint: DELETE /api/requests/{id}
 
 ## 7. Cooling Centre Endpoints
 
-POST /api/centres
-Create a cooling centre (201 Created).
+### 7.1 Create a Cooling Centre
 
-GET /api/centres
-Retrieve cooling centres (200 OK).
+Endpoint: POST /api/centres
 
-GET /api/centres/{id}
-Retrieve an individual centre (200 OK or 404 Not Found).
+Required fields:
+- name: Name of the cooling centre.
+- area: Geographical location.
+- capacity: Positive integer representing total capacity.
+
+Optional fields:
+- opening_hours: Opening hours (defaults to an empty string).
+- status: Centre status (defaults to open).
+
+Successful response:
+201 Created – Returns the newly created cooling centre.
+
+Invalid request:
+400 Bad Request – Returns a JSON error message.
+
+### 7.2 Retrieve All Cooling Centres
+
+Endpoint: GET /api/centres
+
+Successful response:
+200 OK – Returns a JSON list of cooling centres.
+
+An empty list is returned when no centres exist.
+
+### 7.3 Retrieve a Cooling Centre by ID
+
+Endpoint: GET /api/centres/{id}
+
+Successful response:
+200 OK – Returns the requested cooling centre.
+
+Not found:
+404 Not Found – Returns a JSON error message.
 
 ## 8. Booking Endpoints
 
