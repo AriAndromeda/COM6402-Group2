@@ -5,6 +5,7 @@ import os
 
 import requests
 from django.conf import settings
+from django.http import HttpResponseForbidden
 from django.shortcuts import render
 
 logger = logging.getLogger(__name__)
@@ -30,10 +31,18 @@ def _get_json(path):
 def index(request):
     """Render the staff dashboard with request metrics and centre availability.
 
-    .. note::
-       Authentication is not implemented yet (see US08). Anyone who can reach
-       this URL sees all support-request data. Add auth before any deployment.
+    .. warning::
+       Authentication is not implemented yet (see US08). The DASHBOARD_ENABLED
+       environment variable must be set to 'true' before deploying; otherwise
+       this endpoint returns 403 Forbidden.
     """
+
+    # Deployment guard: dashboard is disabled by default until auth is added.
+    if os.environ.get("DASHBOARD_ENABLED", "false").lower() != "true":
+        return HttpResponseForbidden(
+            "<h1>Dashboard Disabled</h1><p>The staff dashboard is not enabled. "
+            "Set DASHBOARD_ENABLED=true to activate it.</p>"
+        )
 
     # Fetch support requests from Flask API.
     requests_data = _get_json("/requests")

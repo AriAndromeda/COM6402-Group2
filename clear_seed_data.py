@@ -4,8 +4,9 @@ Usage:
     python clear_seed_data.py              # remove all seeded records
     python clear_seed_data.py --keep-centres   # keep centres, remove requests & bookings
 
-This script removes only the test data created by ``seed_data.py`` so you can
-re-seed or insert your own records without touching production data.
+This script removes only the test data created by ``seed_data.py`` (records where
+``seeded=True``) so you can re-seed or insert your own records without touching
+genuine data.
 """
 
 import argparse
@@ -20,37 +21,42 @@ db = SQLAlchemy(app)
 class SupportRequest(db.Model):
     __tablename__ = "support_request"
     id = db.Column(db.Integer, primary_key=True)
+    seeded = db.Column(db.Boolean, default=False)
 
 
 class CoolingCentre(db.Model):
     __tablename__ = "cooling_centre"
     id = db.Column(db.Integer, primary_key=True)
+    seeded = db.Column(db.Boolean, default=False)
 
 
 class Booking(db.Model):
     __tablename__ = "booking"
     id = db.Column(db.Integer, primary_key=True)
+    seeded = db.Column(db.Boolean, default=False)
 
 
 def clear(keep_centres: bool = False):
-    """Delete seeded records from the database."""
+    """Delete only seeded records from the database."""
     with app.app_context():
         # Delete bookings first (foreign-key dependency).
-        Booking.query.delete()
-        print("  Removed all bookings.")
+        deleted_bookings = Booking.query.filter_by(seeded=True).delete()
+        db.session.commit()
+        print(f"  Removed {deleted_bookings} seeded booking(s).")
 
         # Delete support requests.
-        SupportRequest.query.delete()
-        print("  Removed all support requests.")
+        deleted_requests = SupportRequest.query.filter_by(seeded=True).delete()
+        db.session.commit()
+        print(f"  Removed {deleted_requests} seeded request(s).")
 
         if not keep_centres:
-            CoolingCentre.query.delete()
-            print("  Removed all cooling centres.")
+            deleted_centres = CoolingCentre.query.filter_by(seeded=True).delete()
+            db.session.commit()
+            print(f"  Removed {deleted_centres} seeded centre(s).")
         else:
-            count = CoolingCentre.query.count()
-            print(f"  Kept {count} cooling centre(s).")
+            count = CoolingCentre.query.filter_by(seeded=False).count()
+            print(f"  Kept {count} non-seeded cooling centre(s).")
 
-        db.session.commit()
         print("\nDone! Seed data cleared.")
 
 

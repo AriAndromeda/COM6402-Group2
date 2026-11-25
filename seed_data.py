@@ -5,6 +5,11 @@ Usage:
 
 Creates realistic support requests, cooling centres and bookings across
 multiple areas so you can verify filters, counts and charts on the dashboard.
+
+Running this script multiple times is safe — it skips records that already
+exist (matched by name for centres and description for requests) and only
+inserts new ones. Bookings reference actual database IDs rather than fixed
+values, so they always point to valid records.
 """
 
 import os
@@ -26,6 +31,7 @@ class SupportRequest(db.Model):
     area = db.Column(db.String(80), nullable=False)
     priority = db.Column(db.String(20), nullable=False, default="medium")
     status = db.Column(db.String(20), nullable=False, default="new")
+    seeded = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, nullable=False)
     updated_at = db.Column(db.DateTime, nullable=False)
 
@@ -46,6 +52,7 @@ class CoolingCentre(db.Model):
     spaces_available = db.Column(db.Integer, nullable=False)
     opening_hours = db.Column(db.String(80), nullable=False, default="")
     status = db.Column(db.String(20), nullable=False, default="open")
+    seeded = db.Column(db.Boolean, default=False)
 
 
 class Booking(db.Model):
@@ -56,6 +63,7 @@ class Booking(db.Model):
     booking_time = db.Column(db.String(20), nullable=False)
     spaces_required = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(20), nullable=False, default="confirmed")
+    seeded = db.Column(db.Boolean, default=False)
 
 
 # ── Seed data definitions ────────────────────────────────────────────
@@ -84,9 +92,10 @@ REQUESTS = [
 ]
 
 BOOKINGS = [
-    {"request_id": 1, "centre_id": 1, "booking_date": "2025-07-15", "booking_time": "18:00", "spaces_required": 2},
-    {"request_id": 2, "centre_id": 2, "booking_date": "2025-07-16", "booking_time": "20:00", "spaces_required": 4},
-    {"request_id": 5, "centre_id": 5, "booking_date": "2025-07-14", "booking_time": "14:00", "spaces_required": 1},
+    # request_id and centre_id are resolved dynamically at runtime.
+    {"request_desc": "Elderly resident needs help finding a cool place to stay during heatwave.", "centre_name": "Town Hall Community Centre",  "booking_date": "2025-07-15", "booking_time": "18:00", "spaces_required": 2},
+    {"request_desc": "Family with young children seeking overnight cooling shelter.",            "centre_name": "St Mary's Church Hall",       "booking_date": "2025-07-16", "booking_time": "20:00", "spaces_required": 4},
+    {"request_desc": "Need help accessing a public cooling space for mobility-impaired person.", "centre_name": "Oldham Community Hub",        "booking_date": "2025-07-14", "booking_time": "14:00", "spaces_required": 1},
 ]
 
 
@@ -97,27 +106,74 @@ def seed():
     with app.app_context():
         db.create_all()
 
-        # Insert centres
+        # Insert centres (skip duplicates matched by name).
+        created_centres = 0
+        centre_id_map = {}  # name -> id for booking references.
         for c in CENTRES:
-            centre = CoolingCentre(**c)
+            existing = CoolingCentre.query.filter_by(name=c["name"]).first()
+            if existing is not None:
+                centre_id_map[c["name"]] = existing.id
+                continue  # skip duplicate
+
+            centre = CoolingCentre(**c, seeded=True)
             db.session.add(centre)
+            created_centres += 1
         db.session.commit()
-        print(f"  Created {len(CENTRES)} cooling centres.")
 
-        # Insert support requests
+        for name, id_val in centre_id_map.items():
+            print(f"  Centre (existing): {name} (id={id_val})")
+        print(f"  Created {created_centres} new cooling centres.")
+
+        # Insert support requests (skip duplicates matched by description).
+        created_requests = 0
+        request_id_map = {}  # description -> id for booking references.
         for r in REQUESTS:
-            req = SupportRequest(**r)
+            existing = SupportRequest.query.filter_by(description=r["description"]).first()
+            if existing is not None:
+                request_id_map[r["description"]] = existing.id
+                continue  # skip duplicate
+
+            req = SupportRequest(**r, seeded=True)
             db.session.add(req)
+            created_requests += 1
         db.session.commit()
-        print(f"  Created {len(REQUESTS)} support requests.")
 
-        # Insert bookings (referencing the above IDs)
+        for desc, id_val in request_id_map.items():
+            print(f"  Request (existing): {desc[:40]}... (id={id_val})")
+        print(f"  Created {created_requests} new support requests.")
+
+        # Insert bookings using dynamic ID lookups.
+        created_bookings = 0
         for b in BOOKINGS:
-            booking = Booking(**b)
-            db.session.add(booking)
-        db.session.commit()
-        print(f"  Created {len(BOOKINGS)} bookings.")
+            req = SupportRequest.query.filter_by(description=b["request_desc"]).first()
+            centre = CoolingCentre.query.filter_by(name=b["centre_name"]).first()
+            if req is None or centre is None:
+                print(f"  Skipping booking — request or centre not found.")
+                continue
 
+            # Check for duplicate booking.
+            existing_booking = Booking.query.filter_by(
+                request_id=req.id,
+                centre_id=centre.id,
+                booking_date=b["booking_date"],
+                booking_time=b["booking_time"],
+            ).first()
+            if existing_booking is not None:
+                continue  # skip duplicate
+
+            booking = Booking(
+                request_id=req.id,
+                centre_id=centre.id,
+                booking_date=b["booking_date"],
+                booking_time=b["booking_time"],
+                spaces_required=b["spaces_required"],
+                seeded=True,
+            )
+            db.session.add(booking)
+            created_bookings += 1
+        db.session.commit()
+
+        print(f"  Created {created_bookings} new bookings.")
         print("\nDone! Database seeded with test data.")
 
 

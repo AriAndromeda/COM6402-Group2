@@ -18,6 +18,8 @@ fi
 
 FLASK_PORT=5000
 DJANGO_API_URL="http://127.0.0.1:5000/api"
+FLASK_PID=""
+DJANGO_PID=""
 
 # Check if our Flask API is already running (expects JSON health response).
 HEALTH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000/api/health 2>/dev/null || echo "000")
@@ -27,6 +29,7 @@ if [ "$HEALTH_CHECK" = "200" ]; then
 else
     echo "Starting Flask API on port 5000..."
     PORT=5000 python app.py > /tmp/flask.log 2>&1 &
+    FLASK_PID=$!
 
     for i in $(seq 1 10); do
         HC=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000/api/health 2>/dev/null || echo "000")
@@ -43,10 +46,13 @@ else
         FLASK_PORT=5001
         DJANGO_API_URL="http://127.0.0.1:5001/api"
 
-        pkill -f "python app.py" 2>/dev/null || true
+        # Kill the failed Flask process (only the one we started).
+        kill "$FLASK_PID" 2>/dev/null || true
+        wait "$FLASK_PID" 2>/dev/null || true
         sleep 0.5
 
         PORT=5001 python app.py > /tmp/flask.log 2>&1 &
+        FLASK_PID=$!
 
         for i in $(seq 1 10); do
             HC=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5001/api/health 2>/dev/null || echo "000")
@@ -72,13 +78,18 @@ echo "Starting Django dashboard on port 8000..."
 DJANGO_FLASK_API_URL="$DJANGO_API_URL" python manage.py runserver 8000 &
 DJANGO_PID=$!
 
-# Kill Flask when Ctrl+C is pressed.
+# Kill only the processes this script started (tracked by PID).
 cleanup() {
     echo ""
     echo "Shutting down servers..."
-    pkill -f "python app.py" 2>/dev/null || true
-    kill "$DJANGO_PID" 2>/dev/null || true
-    wait 2>/dev/null || true
+    if [ -n "$FLASK_PID" ]; then
+        kill "$FLASK_PID" 2>/dev/null || true
+        wait "$FLASK_PID" 2>/dev/null || true
+    fi
+    if [ -n "$DJANGO_PID" ]; then
+        kill "$DJANGO_PID" 2>/dev/null || true
+        wait "$DJANGO_PID" 2>/dev/null || true
+    fi
     echo "Done."
 }
 trap cleanup INT TERM
