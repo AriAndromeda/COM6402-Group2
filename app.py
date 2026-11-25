@@ -289,9 +289,12 @@ def update_request(request_id):
                 ), 400
             cleaned_values[field_name] = area_raw
 
-    # Phase 2 — apply all validated changes at once (Issue #1).
+    # Phase 2 — apply all validated changes at once.
     for field_name, value in cleaned_values.items():
         setattr(record, field_name, value)
+
+    # Refresh updated_at to the current time on every PATCH.
+    record.updated_at = datetime.now(timezone.utc)
 
     db.session.commit()
     return jsonify(record.to_dict())
