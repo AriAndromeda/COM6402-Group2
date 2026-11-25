@@ -172,6 +172,49 @@ Tests use an in-memory SQLite database for the Flask side and mocked HTTP respon
 
 ## Notes
 
-- **No authentication** – This is a teaching example for local development only. Add auth before any deployment (see US08).
+- **Authentication** – US06 provides Bearer-token authentication and role-based access control for protected Flask API write operations. The Django dashboard itself does not yet enforce user authentication. Dashboard access controls must be implemented before deployment.
 - **Data persistence** – Both services use SQLite databases (`heatshield.db` for Flask, `db.sqlite3` for Django). These are ignored in `.gitignore`.
 - **Port fallback** – If port 5000 is occupied by another application, `start.sh` automatically starts Flask on port 5001 and updates the Django API URL accordingly.
+
+
+## US06 – Staff Authentication and Access Control
+
+US06 introduces Bearer-token authentication, role-based
+authorisation and audit logging for protected API operations.
+
+### Protected Endpoints
+
+The following operations require an authorised staff account:
+
+- PATCH `/api/requests/<id>`
+- DELETE `/api/requests/<id>`
+- POST `/api/centres`
+- POST `/api/bookings`
+
+Supported roles are `staff` and `supervisor`.
+
+Requests without valid authentication return HTTP 401.
+Authenticated users without sufficient permissions receive HTTP 403.
+
+### Authentication Header
+
+Protected API requests must include:
+
+`Authorization: Bearer <staff_access_token>`
+
+Staff tokens are generated using the internal `provision_staff()`
+function. Only token hashes are stored in the database.
+
+Access tokens must remain confidential and must never be
+committed to GitHub.
+
+Public support-request submission remains available through
+POST `/api/requests`.
+
+### Audit Logging
+
+Successful protected operations record the responsible staff
+member, action, affected resource and timestamp.
+
+For implementation details, testing evidence and limitations,
+see `US06_SECURITY_DOCUMENTATION.md`.

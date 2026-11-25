@@ -16,16 +16,19 @@ def _create_request(client):
     return response.json["id"]
 
 
-def _create_centre(client, capacity=10, status="open"):
+
+def _create_centre(client, staff_headers, capacity=10, status="open"):
+    """Create a cooling centre using authorised staff credentials."""
     response = client.post(
         "/api/centres",
         json={
-            "name": "Bolton Community Centre",
+            "name": "Bolton Cooling Centre",
             "area": "Bolton",
             "capacity": capacity,
             "opening_hours": "09:00-17:00",
             "status": status,
         },
+        headers=staff_headers,
     )
     assert response.status_code == 201
     return response.json
@@ -33,7 +36,6 @@ def _create_centre(client, capacity=10, status="open"):
 
 def _booking_count():
     return db.session.query(Booking).count()
-
 
 def test_cooling_centre_to_dict():
     from app import CoolingCentre
@@ -81,9 +83,9 @@ def test_booking_to_dict():
     }
 
 
-def test_create_booking_happy_path(client):
+def test_create_booking_happy_path(client, staff_headers):
     request_id = _create_request(client)
-    centre = _create_centre(client, capacity=10)
+    centre = _create_centre(client, staff_headers, capacity=10)
     centre_id = centre["id"]
     assert centre["spaces_available"] == 10
 
@@ -96,6 +98,7 @@ def test_create_booking_happy_path(client):
             "booking_time": "14:00",
             "spaces_required": 2,
         },
+        headers=staff_headers,
     )
 
     assert response.status_code == 201
@@ -120,10 +123,10 @@ def test_create_booking_happy_path(client):
     assert booking.json["id"] == body["id"]
 
 
-def test_reject_booking_when_centre_full(client):
+def test_reject_booking_when_centre_full(client, staff_headers):
     """US04d: full centres are rejected with JSON error + HTTP 409."""
     request_id = _create_request(client)
-    centre = _create_centre(client, capacity=2)
+    centre = _create_centre(client, staff_headers, capacity=2)
     centre_id = centre["id"]
 
     # Fill the centre completely.
@@ -136,6 +139,7 @@ def test_reject_booking_when_centre_full(client):
             "booking_time": "14:00",
             "spaces_required": 2,
         },
+        headers=staff_headers,
     )
     assert first.status_code == 201
 
@@ -150,6 +154,7 @@ def test_reject_booking_when_centre_full(client):
             "booking_time": "15:00",
             "spaces_required": 1,
         },
+        headers=staff_headers,
     )
 
     assert response.status_code == 409
@@ -163,10 +168,10 @@ def test_reject_booking_when_centre_full(client):
     assert centre_after.json["spaces_available"] == 0
 
 
-def test_reject_booking_when_centre_closed(client):
+def test_reject_booking_when_centre_closed(client, staff_headers):
     """US04d: closed centres are rejected with JSON error + HTTP 409."""
     request_id = _create_request(client)
-    centre = _create_centre(client, capacity=10, status="closed")
+    centre = _create_centre(client, staff_headers, capacity=10, status="closed")
     centre_id = centre["id"]
 
     response = client.post(
@@ -178,6 +183,7 @@ def test_reject_booking_when_centre_closed(client):
             "booking_time": "14:00",
             "spaces_required": 2,
         },
+        headers=staff_headers
     )
 
     assert response.status_code == 409
@@ -189,10 +195,10 @@ def test_reject_booking_when_centre_closed(client):
     assert centre_after.json["spaces_available"] == 10
 
 
-def test_reject_booking_when_request_exceeds_remaining_spaces(client):
+def test_reject_booking_when_request_exceeds_remaining_spaces(client, staff_headers):
     """US04d: reject when spaces_required exceeds remaining capacity (not fully full)."""
     request_id = _create_request(client)
-    centre = _create_centre(client, capacity=10)
+    centre = _create_centre(client, staff_headers, capacity=10)
     centre_id = centre["id"]
 
     # Leave 2 spaces free.
@@ -205,6 +211,7 @@ def test_reject_booking_when_request_exceeds_remaining_spaces(client):
             "booking_time": "14:00",
             "spaces_required": 8,
         },
+        headers=staff_headers,
     )
     assert first.status_code == 201
     assert _booking_count() == 1
@@ -220,6 +227,7 @@ def test_reject_booking_when_request_exceeds_remaining_spaces(client):
             "booking_time": "15:00",
             "spaces_required": 3,
         },
+        headers=staff_headers,
     )
 
     assert response.status_code == 409

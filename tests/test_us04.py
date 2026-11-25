@@ -11,6 +11,9 @@ Covers all acceptance criteria checklists:
   - Edge cases: empty strings, whitespace-only, non-string types
 """
 
+from typing import Literal
+
+from flask.testing import FlaskClient
 import pytest
 from app import app, db
 
@@ -28,60 +31,58 @@ def client():
     app.config["TESTING"] = True
 
     with app.app_context():
-        db.drop_all()
-        db.create_all()
-
-    yield app.test_client()
-
-    with app.app_context():
         db.session.remove()
         db.drop_all()
+        db.create_all()
+        try:
+            yield app.test_client()
+        finally:
+            db.session.remove()
+            db.drop_all()
 
     # Restore original config values.
     app.config["SQLALCHEMY_DATABASE_URI"] = _original_uri
     if _original_testing is not None:
         app.config["TESTING"] = _original_testing
 
-
 # ======================================================================
 # US04a — Create requests (Acceptance Criteria 1–5)
 # ======================================================================
-
 
 class TestUS04aCreateRequests:
     """US04a: Implement create endpoint that validates required fields."""
 
     # --- AC item 1: Define the required fields for creating a support request
 
-    def test_create_missing_description_returns_400(self, client):
+    def test_create_missing_description_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests", json={"category": "welfare", "area": "Bolton"}
         )
         assert resp.status_code == 400
         assert "description" in resp.json["error"].lower()
 
-    def test_create_missing_category_returns_400(self, client):
+    def test_create_missing_category_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests", json={"description": "Help needed", "area": "Bolton"}
         )
         assert resp.status_code == 400
         assert "category" in resp.json["error"].lower()
 
-    def test_create_missing_area_returns_400(self, client):
+    def test_create_missing_area_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests", json={"description": "Help needed", "category": "welfare"}
         )
         assert resp.status_code == 400
         assert "area" in resp.json["error"].lower()
 
-    def test_create_empty_string_description_returns_400(self, client):
+    def test_create_empty_string_description_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={"description": "", "category": "welfare", "area": "Bolton"},
         )
         assert resp.status_code == 400
 
-    def test_create_whitespace_only_description_returns_400(self, client):
+    def test_create_whitespace_only_description_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={"description": "   ", "category": "welfare", "area": "Bolton"},
@@ -90,7 +91,7 @@ class TestUS04aCreateRequests:
 
     # --- Non-string types for required fields (Issue #5)
 
-    def test_create_int_description_returns_400(self, client):
+    def test_create_int_description_returns_400(self, client: FlaskClient):
         """Non-string type for a required field must be rejected."""
         resp = client.post(
             "/api/requests",
@@ -99,7 +100,7 @@ class TestUS04aCreateRequests:
         assert resp.status_code == 400
         assert "description" in resp.json["error"].lower()
 
-    def test_create_none_category_returns_400(self, client):
+    def test_create_none_category_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={"description": "Help needed", "category": None, "area": "Bolton"},
@@ -107,7 +108,7 @@ class TestUS04aCreateRequests:
         assert resp.status_code == 400
         assert "category" in resp.json["error"].lower()
 
-    def test_create_list_area_returns_400(self, client):
+    def test_create_list_area_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={
@@ -119,7 +120,7 @@ class TestUS04aCreateRequests:
         assert resp.status_code == 400
         assert "area" in resp.json["error"].lower()
 
-    def test_create_description_too_long_returns_400(self, client):
+    def test_create_description_too_long_returns_400(self, client: FlaskClient):
         """description must not exceed MAX_DESCRIPTION_LENGTH (500)."""
         long_desc = "x" * 501
         resp = client.post(
@@ -129,7 +130,7 @@ class TestUS04aCreateRequests:
         assert resp.status_code == 400
         assert "description must be" in resp.json["error"].lower()
 
-    def test_create_area_too_long_returns_400(self, client):
+    def test_create_area_too_long_returns_400(self, client: FlaskClient):
         """area must not exceed MAX_AREA_LENGTH (80)."""
         long_area = "x" * 81
         resp = client.post(
@@ -143,7 +144,7 @@ class TestUS04aCreateRequests:
         assert resp.status_code == 400
         assert "area must be" in resp.json["error"].lower()
 
-    def test_patch_description_too_long_returns_400(self, client):
+    def test_patch_description_too_long_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH description length is also enforced."""
         create_resp = client.post(
             "/api/requests",
@@ -151,10 +152,10 @@ class TestUS04aCreateRequests:
         )
         req_id = create_resp.json["id"]
         long_desc = "x" * 501
-        resp = client.patch(f"/api/requests/{req_id}", json={"description": long_desc})
+        resp = client.patch(f"/api/requests/{req_id}", json={"description": long_desc}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_area_too_long_returns_400(self, client):
+    def test_patch_area_too_long_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH area length is also enforced."""
         create_resp = client.post(
             "/api/requests",
@@ -162,30 +163,30 @@ class TestUS04aCreateRequests:
         )
         req_id = create_resp.json["id"]
         long_area = "x" * 81
-        resp = client.patch(f"/api/requests/{req_id}", json={"area": long_area})
+        resp = client.patch(f"/api/requests/{req_id}", json={"area": long_area}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_non_string_description_returns_400(self, client):
+    def test_patch_non_string_description_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH with non-string required field must be rejected."""
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
-        resp = client.patch(f"/api/requests/{req_id}", json={"description": 42})
+        resp = client.patch(f"/api/requests/{req_id}", json={"description": 42}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_non_string_area_returns_400(self, client):
+    def test_patch_non_string_area_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH with non-string area must be rejected."""
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
-        resp = client.patch(f"/api/requests/{req_id}", json={"area": None})
+        resp = client.patch(f"/api/requests/{req_id}", json={"area": None}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_two_phase_validation(self, client):
+    def test_patch_two_phase_validation(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH must not partially mutate when a later field is invalid (Issue #1)."""
         create_resp = client.post(
             "/api/requests",
@@ -200,6 +201,7 @@ class TestUS04aCreateRequests:
                 "description": "Updated",
                 "priority": "urgent",  # invalid enum value
             },
+            headers=staff_headers,
         )
         assert resp.status_code == 400
 
@@ -209,7 +211,7 @@ class TestUS04aCreateRequests:
 
     # --- AC item 2: Implement create endpoint that validates required fields
 
-    def test_create_invalid_priority_returns_400(self, client):
+    def test_create_invalid_priority_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={
@@ -222,7 +224,7 @@ class TestUS04aCreateRequests:
         assert resp.status_code == 400
         assert "one of" in resp.json["error"].lower()
 
-    def test_create_invalid_status_returns_400(self, client):
+    def test_create_invalid_status_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={
@@ -234,7 +236,7 @@ class TestUS04aCreateRequests:
         )
         assert resp.status_code == 400
 
-    def test_create_invalid_category_returns_400(self, client):
+    def test_create_invalid_category_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests",
             json={
@@ -245,7 +247,7 @@ class TestUS04aCreateRequests:
         )
         assert resp.status_code == 400
 
-    def test_create_valid_all_fields_returns_201(self, client):
+    def test_create_valid_all_fields_returns_201(self, client: FlaskClient):
         data = {
             "description": "Water assistance needed",
             "category": "welfare",
@@ -256,7 +258,7 @@ class TestUS04aCreateRequests:
         resp = client.post("/api/requests", json=data)
         assert resp.status_code == 201
 
-    def test_create_non_json_body_returns_400(self, client):
+    def test_create_non_json_body_returns_400(self, client: FlaskClient):
         resp = client.post(
             "/api/requests", data="not json", content_type="application/json"
         )
@@ -264,7 +266,7 @@ class TestUS04aCreateRequests:
 
     # --- AC item 3: Return a unique ID when a request is saved successfully
 
-    def test_create_returns_unique_id(self, client):
+    def test_create_returns_unique_id(self, client: FlaskClient):
         data = {"description": "First request", "category": "welfare", "area": "Bolton"}
         resp1 = client.post("/api/requests", json=data)
         id1 = resp1.json["id"]
@@ -281,7 +283,7 @@ class TestUS04aCreateRequests:
         assert isinstance(id2, int) and id2 > 0
         assert id1 != id2
 
-    def test_created_request_retrievable_by_id(self, client):
+    def test_created_request_retrievable_by_id(self, client: FlaskClient):
         data = {
             "description": "Retrievable request",
             "category": "medical",
@@ -296,7 +298,7 @@ class TestUS04aCreateRequests:
 
     # --- AC item 4: Support welfare/practical-assistance records with status only
 
-    def test_welfare_record_defaults(self, client):
+    def test_welfare_record_defaults(self, client: FlaskClient):
         """Minimal fields: description + category + area. Priority/status default."""
         data = {
             "description": "Water assistance needed",
@@ -308,7 +310,7 @@ class TestUS04aCreateRequests:
         assert resp.json["priority"] == "medium"
         assert resp.json["status"] == "new"
 
-    def test_practical_assistance_record_defaults(self, client):
+    def test_practical_assistance_record_defaults(self, client: FlaskClient):
         data = {
             "description": "Need help with groceries",
             "category": "practical-assistance",
@@ -319,7 +321,7 @@ class TestUS04aCreateRequests:
         assert resp.json["priority"] == "medium"
         assert resp.json["status"] == "new"
 
-    def test_welfare_record_with_explicit_status(self, client):
+    def test_welfare_record_with_explicit_status(self, client: FlaskClient):
         data = {
             "description": "Elderly check needed",
             "category": "welfare",
@@ -332,7 +334,7 @@ class TestUS04aCreateRequests:
 
     # --- AC item 5: Test valid create and invalid/missing-field cases
 
-    def test_create_all_categories(self, client):
+    def test_create_all_categories(self, client: FlaskClient):
         """Every allowed category should succeed."""
         for cat in ("welfare", "cooling", "practical-assistance", "medical"):
             resp = client.post(
@@ -353,7 +355,7 @@ class TestUS04aCreateRequests:
             ("status", "completed"),
         ],
     )
-    def test_create_all_enum_values(self, client, field, value):
+    def test_create_all_enum_values(self, client: FlaskClient, field: Literal['priority'] | Literal['status'], value: Literal['low'] | Literal['medium'] | Literal['high'] | Literal['critical'] | Literal['new'] | Literal['in progress'] | Literal['completed']):
         """Every allowed enum value for priority and status should succeed."""
         resp = client.post(
             "/api/requests",
@@ -366,7 +368,7 @@ class TestUS04aCreateRequests:
         )
         assert resp.status_code == 201
 
-    def test_create_case_insensitive_enum(self, client):
+    def test_create_case_insensitive_enum(self, client: FlaskClient):
         """Enums should be case-insensitive (converted to lowercase)."""
         resp = client.post(
             "/api/requests",
@@ -383,7 +385,7 @@ class TestUS04aCreateRequests:
         assert resp.json["priority"] == "high"
         assert resp.json["status"] == "new"
 
-    def test_create_trims_whitespace(self, client):
+    def test_create_trims_whitespace(self, client: FlaskClient):
         data = {
             "description": "  Trim me  ",
             "category": " welfare ",
@@ -394,29 +396,27 @@ class TestUS04aCreateRequests:
         assert resp.json["description"] == "Trim me"
         assert resp.json["category"] == "welfare"
 
-
 # ======================================================================
 # US04b — Update requests (Acceptance Criteria 1–4)
 # ======================================================================
-
 
 class TestUS04bUpdateRequests:
     """US04b: Implement update endpoint for existing request."""
 
     # --- AC item 1: Implement an update endpoint for an existing request
 
-    def test_patch_single_field(self, client):
+    def test_patch_single_field(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Original", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"priority": "critical"})
+        resp = client.patch(f"/api/requests/{req_id}", json={"priority": "critical"}, headers=staff_headers)
         assert resp.status_code == 200
         assert resp.json["priority"] == "critical"
 
-    def test_patch_multiple_fields(self, client):
+    def test_patch_multiple_fields(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Original", "category": "welfare", "area": "Bolton"},
@@ -426,18 +426,19 @@ class TestUS04bUpdateRequests:
         resp = client.patch(
             f"/api/requests/{req_id}",
             json={"priority": "high", "status": "in progress"},
+            headers=staff_headers,
         )
         assert resp.status_code == 200
         assert resp.json["priority"] == "high"
         assert resp.json["status"] == "in progress"
 
-    def test_patch_nonexistent_returns_404(self, client):
-        resp = client.patch("/api/requests/9999", json={"status": "new"})
+    def test_patch_nonexistent_returns_404(self, client: FlaskClient, staff_headers: dict[str, str]):
+        resp = client.patch("/api/requests/9999", json={"status": "new"}, headers=staff_headers)
         assert resp.status_code == 404
 
     # --- AC item 2: Persist the changed fields in the database
 
-    def test_patch_status_persists(self, client):
+    def test_patch_status_persists(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={
@@ -448,14 +449,14 @@ class TestUS04bUpdateRequests:
         )
         req_id = create_resp.json["id"]
 
-        client.patch(f"/api/requests/{req_id}", json={"status": "completed"})
+        client.patch(f"/api/requests/{req_id}", json={"status": "completed"}, headers=staff_headers)
 
         # Re-fetch from database via GET — confirms persistence.
         get_resp = client.get(f"/api/requests/{req_id}")
         assert get_resp.status_code == 200
         assert get_resp.json["status"] == "completed"
 
-    def test_patch_priority_persists(self, client):
+    def test_patch_priority_persists(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={
@@ -466,14 +467,14 @@ class TestUS04bUpdateRequests:
         )
         req_id = create_resp.json["id"]
 
-        client.patch(f"/api/requests/{req_id}", json={"priority": "low"})
+        client.patch(f"/api/requests/{req_id}", json={"priority": "low"}, headers=staff_headers)
 
         get_resp = client.get(f"/api/requests/{req_id}")
         assert get_resp.json["priority"] == "low"
 
     # --- AC item 3: Retrieve the request and confirm the update is visible
 
-    def test_update_retrieval_round_trip(self, client):
+    def test_update_retrieval_round_trip(self, client: FlaskClient, staff_headers: dict[str, str]):
         """Full round-trip: create → patch → GET confirms all changes."""
         create_resp = client.post(
             "/api/requests",
@@ -493,6 +494,7 @@ class TestUS04bUpdateRequests:
                 "priority": "critical",
                 "status": "in progress",
             },
+            headers=staff_headers,
         )
 
         get_resp = client.get(f"/api/requests/{req_id}")
@@ -501,7 +503,7 @@ class TestUS04bUpdateRequests:
         assert get_resp.json["priority"] == "critical"
         assert get_resp.json["status"] == "in progress"
 
-    def test_patch_does_not_affect_other_fields(self, client):
+    def test_patch_does_not_affect_other_fields(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH should only change supplied fields (partial update)."""
         create_resp = client.post(
             "/api/requests",
@@ -514,7 +516,7 @@ class TestUS04bUpdateRequests:
         )
         req_id = create_resp.json["id"]
 
-        client.patch(f"/api/requests/{req_id}", json={"status": "completed"})
+        client.patch(f"/api/requests/{req_id}", json={"status": "completed"}, headers=staff_headers)
 
         get_resp = client.get(f"/api/requests/{req_id}")
         assert get_resp.json["description"] == "Original desc"
@@ -524,68 +526,68 @@ class TestUS04bUpdateRequests:
 
     # --- AC item 4: Test the update path (and auth failure if already in scope)
 
-    def test_patch_invalid_priority_returns_400(self, client):
+    def test_patch_invalid_priority_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"priority": "urgent"})
+        resp = client.patch(f"/api/requests/{req_id}", json={"priority": "urgent"}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_invalid_status_returns_400(self, client):
+    def test_patch_invalid_status_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"status": "pending"})
+        resp = client.patch(f"/api/requests/{req_id}", json={"status": "pending"}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_invalid_category_returns_400(self, client):
+    def test_patch_invalid_category_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"category": "emergency"})
+        resp = client.patch(f"/api/requests/{req_id}", json={"category": "emergency"}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_unknown_field_returns_400(self, client):
+    def test_patch_unknown_field_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"unknown_field": "value"})
+        resp = client.patch(f"/api/requests/{req_id}", json={"unknown_field": "value"}, headers=staff_headers)
         assert resp.status_code == 400
         assert "Cannot update" in resp.json["error"]
 
-    def test_patch_empty_json_returns_400(self, client):
+    def test_patch_empty_json_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={})
+        resp = client.patch(f"/api/requests/{req_id}", json={}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_empty_string_field_returns_400(self, client):
+    def test_patch_empty_string_field_returns_400(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Test", "category": "welfare", "area": "Bolton"},
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"priority": ""})
+        resp = client.patch(f"/api/requests/{req_id}", json={"priority": ""}, headers=staff_headers)
         assert resp.status_code == 400
 
-    def test_patch_case_insensitive_enum(self, client):
+    def test_patch_case_insensitive_enum(self, client: FlaskClient, staff_headers: dict[str, str]):
         """PATCH enums should also be case-insensitive."""
         create_resp = client.post(
             "/api/requests",
@@ -593,11 +595,11 @@ class TestUS04bUpdateRequests:
         )
         req_id = create_resp.json["id"]
 
-        resp = client.patch(f"/api/requests/{req_id}", json={"priority": "CRITICAL"})
+        resp = client.patch(f"/api/requests/{req_id}", json={"priority": "CRITICAL"}, headers=staff_headers)
         assert resp.status_code == 200
         assert resp.json["priority"] == "critical"
 
-    def test_patch_description_and_area(self, client):
+    def test_patch_description_and_area(self, client: FlaskClient, staff_headers: dict[str, str]):
         create_resp = client.post(
             "/api/requests",
             json={"description": "Old desc", "category": "welfare", "area": "Bolton"},
@@ -607,72 +609,148 @@ class TestUS04bUpdateRequests:
         resp = client.patch(
             f"/api/requests/{req_id}",
             json={"description": "New desc", "area": "Manchester"},
+            headers=staff_headers,
         )
         assert resp.status_code == 200
         assert resp.json["description"] == "New desc"
         assert resp.json["area"] == "Manchester"
 
-
 # ======================================================================
 # DELETE endpoint (Issue #7)
 # ======================================================================
 
-
 class TestDeleteRequests:
-    """Basic tests for the DELETE /api/requests/<id> endpoint."""
+    """Regression tests for deleting support requests."""
 
-    def test_delete_existing_returns_204(self, client):
-        create_resp = client.post(
+    def test_delete_existing_returns_204(
+        self, client: FlaskClient, staff_headers: dict[str, str]
+    ):
+        """Authorised staff can successfully delete a request."""
+        response = client.post(
             "/api/requests",
-            json={"description": "To delete", "category": "welfare", "area": "Bolton"},
+            json={
+                "description": "To delete",
+                "category": "welfare",
+                "area": "Bolton"
+            }
         )
-        req_id = create_resp.json["id"]
+        assert response.status_code == 201
+        request_id = response.json["id"]
 
-        resp = client.delete(f"/api/requests/{req_id}")
-        assert resp.status_code == 204
+        response = client.delete(
+            f"/api/requests/{request_id}",
+            headers=staff_headers
+        )
 
-    def test_delete_removes_from_database(self, client):
-        create_resp = client.post(
+        assert response.status_code == 204
+
+    def test_delete_removes_from_database(
+        self, client: FlaskClient, staff_headers: dict[str, str]
+    ):
+        """Deleted requests must no longer be retrievable."""
+        response = client.post(
             "/api/requests",
             json={
                 "description": "Gone soon",
                 "category": "cooling",
-                "area": "Manchester",
-            },
+                "area": "Manchester"
+            }
         )
-        req_id = create_resp.json["id"]
+        assert response.status_code == 201
+        request_id = response.json["id"]
 
-        client.delete(f"/api/requests/{req_id}")
-        get_resp = client.get(f"/api/requests/{req_id}")
-        assert get_resp.status_code == 404
+        response = client.delete(
+            f"/api/requests/{request_id}",
+            headers=staff_headers
+        )
+        assert response.status_code == 204
 
-    def test_delete_nonexistent_returns_404(self, client):
-        resp = client.delete("/api/requests/9999")
-        assert resp.status_code == 404
+        result = client.get(f"/api/requests/{request_id}")
+        assert result.status_code == 404
 
+    def test_delete_nonexistent_returns_404(
+        self, client: FlaskClient, staff_headers: dict[str, str]
+    ):
+        """Deleting a non-existent request returns HTTP 404."""
+        response = client.delete(
+            "/api/requests/9999",
+            headers=staff_headers
+        )
+
+        assert response.status_code == 404
 
 # ======================================================================
 # Environment configuration
 # ======================================================================
 
+class TestDeleteRequests:
+    """Regression tests for deleting support requests."""
+
+    def test_delete_existing_returns_204(self, client: FlaskClient, staff_headers: dict[str, str]):
+        response = client.post(
+            "/api/requests",
+            json={
+                "description": "To delete",
+                "category": "welfare",
+                "area": "Bolton"
+            }
+        )
+        assert response.status_code == 201
+        request_id = response.json["id"]
+
+        response = client.delete(
+            f"/api/requests/{request_id}",
+            headers=staff_headers
+        )
+
+        assert response.status_code == 204
+
+    def test_delete_removes_from_database(self, client: FlaskClient, staff_headers: dict[str, str]):
+        response = client.post(
+            "/api/requests",
+            json={
+                "description": "Gone soon",
+                "category": "cooling",
+                "area": "Manchester"
+            }
+        )
+        assert response.status_code == 201
+        request_id = response.json["id"]
+
+        response = client.delete(
+            f"/api/requests/{request_id}",
+            headers=staff_headers
+        )
+        assert response.status_code == 204
+
+        result = client.get(f"/api/requests/{request_id}")
+        assert result.status_code == 404
+
+    def test_delete_nonexistent_returns_404(self, client: FlaskClient, staff_headers: dict[str, str]):
+        response = client.delete(
+            "/api/requests/9999",
+            headers=staff_headers
+        )
+
+        assert response.status_code == 404
 
 class TestPortEnvironmentVariable:
     """Tests for selecting the Flask port from the PORT variable."""
 
-    def test_port_defaults_to_5000(self, monkeypatch):
+    def test_port_defaults_to_5000(self, monkeypatch: pytest.MonkeyPatch):
         from app import get_port
 
         monkeypatch.delenv("PORT", raising=False)
         assert get_port() == 5000
 
-    def test_port_uses_environment_value(self, monkeypatch):
+    def test_port_uses_environment_value(self, monkeypatch: pytest.MonkeyPatch):
         from app import get_port
 
         monkeypatch.setenv("PORT", "5001")
         assert get_port() == 5001
 
     @pytest.mark.parametrize("value", ["not-a-port", "", "12.5"])
-    def test_port_rejects_non_integer_values(self, monkeypatch, value):
+    def test_port_rejects_non_integer_values(self, monkeypatch: pytest.MonkeyPatch, value: Literal['not-a-port'] | Literal[''] | Literal['12.5']):
         from app import get_port
 
         monkeypatch.setenv("PORT", value)
@@ -680,7 +758,7 @@ class TestPortEnvironmentVariable:
             get_port()
 
     @pytest.mark.parametrize("value", ["0", "65536", "-1"])
-    def test_port_rejects_out_of_range_values(self, monkeypatch, value):
+    def test_port_rejects_out_of_range_values(self, monkeypatch: pytest.MonkeyPatch, value: Literal['0'] | Literal['65536'] | Literal['-1']):
         from app import get_port
 
         monkeypatch.setenv("PORT", value)
