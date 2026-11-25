@@ -1,16 +1,18 @@
 
-from typing import Literal
-from app import StaffUser, AuditLog, db
-from app import generate_staff_token
-from app import provision_staff
-
-from flask.testing import FlaskClient
-import pytest
 import hashlib
+from typing import Literal
 
-from app import StaffUser, db
-from tests.conftest import staff_headers
-from tests.conftest import staff_headers
+import pytest
+from flask.testing import FlaskClient
+
+from app import (
+    AuditLog,
+    StaffUser,
+    db,
+    generate_staff_token,
+    provision_staff,
+)
+
 
 def test_unauthenticated_user_cannot_update_request(client: FlaskClient):
     """Unauthenticated users must not modify support requests."""

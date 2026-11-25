@@ -46,3 +46,39 @@ preventing changes to the development database.
 ### Testing Framework
 
 pytest and Flask's built-in test client.
+
+
+## US06 – Staff Authentication
+
+Protected API operations require an authorised staff account.
+
+The following endpoints require an HTTP Bearer token:
+
+- PATCH /api/requests/<id>
+- DELETE /api/requests/<id>
+- POST /api/centres
+- POST /api/bookings
+
+The supported roles are `staff` and `supervisor`.
+
+Requests without valid authentication return HTTP 401.
+Authenticated users without sufficient permissions receive HTTP 403.
+
+### Authentication Header
+
+Include the following header when calling protected endpoints:
+
+Authorization: Bearer <staff_access_token>
+
+Staff tokens are generated using the internal
+`provision_staff()` function. Only token hashes are
+stored in the database.
+
+Tokens must be kept confidential and must not be
+committed to GitHub.
+
+Public support-request submission remains available
+through POST /api/requests.
+
+For implementation details, testing evidence and
+limitations, see `US06_SECURITY_DOCUMENTATION.md`.

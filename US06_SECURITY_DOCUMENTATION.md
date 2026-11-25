@@ -69,7 +69,7 @@ The implementation was verified using pytest, covering:
 - Staff provisioning and token generation
 - Supervisor permissions
 
-Full regression result: 115 tests passed.
+Full regression result: 118 tests passed.
 
 ## Limitations
 

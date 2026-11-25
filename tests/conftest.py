@@ -1,8 +1,7 @@
 import hashlib
 import pytest
 
-from app import StaffUser, db
-from app import app, db
+from app import StaffUser, app, db
 
 
 @pytest.fixture

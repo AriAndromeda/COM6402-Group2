@@ -13,8 +13,10 @@ Try:
     http://127.0.0.1:5000/api/centres
     http://127.0.0.1:5000/api/bookings
 
-This is a TEACHING EXAMPLE, not a finished Heat Shield application.
-There is no authentication: run locally only, using fictional data.
+This is a teaching prototype, not a production-ready application.
+US06 provides Bearer-token authentication and role-based access control
+for protected write operations, with audit logging of successful changes.
+Some endpoints remain public. Run locally using fictional data only.
 """
 
 import os
