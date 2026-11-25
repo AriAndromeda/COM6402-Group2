@@ -22,6 +22,7 @@ Some endpoints remain public. Run locally using fictional data only.
 import os
 import hashlib
 import secrets
+from datetime import datetime, timezone
 from functools import wraps
 
 from flask import g
@@ -122,10 +123,6 @@ class Booking(db.Model):
         }
 
     # US06 - Staff identity and audit models
-
-from datetime import datetime, timezone
-
-
 class StaffUser(db.Model):
     """Store staff identities and their access roles."""
 
