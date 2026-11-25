@@ -19,14 +19,13 @@ for protected write operations, with audit logging of successful changes.
 Some endpoints remain public. Run locally using fictional data only.
 """
 
-import os
 import hashlib
+import os
 import secrets
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import g
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 
 # 1. Set up Flask and the SQLite database.
@@ -68,6 +67,16 @@ class SupportRequest(db.Model):
     area = db.Column(db.String(80), nullable=False)
     priority = db.Column(db.String(20), nullable=False, default="medium")
     status = db.Column(db.String(20), nullable=False, default="new")
+    created_at = db.Column(db.DateTime, nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        now = datetime.now(timezone.utc)
+        if self.created_at is None:
+            self.created_at = now
+        if self.updated_at is None:
+            self.updated_at = now
 
     def to_dict(self):
         """Turn a database object into JSON-friendly data."""
@@ -78,6 +87,8 @@ class SupportRequest(db.Model):
             "area": self.area,
             "priority": self.priority,
             "status": self.status,
+            "created_at": str(self.created_at),
+            "updated_at": str(self.updated_at),
         }
 
 
@@ -466,19 +477,22 @@ def update_request(request_id):
             cleaned_values[field_name] = area_raw
 
 
-    # Phase 2: Apply validated changes
+    # Phase 2: Apply all validated changes.
     for field_name, value in cleaned_values.items():
         setattr(record, field_name, value)
 
-    # US06: Record the authorised staff action
+    # Keep the modification timestamp accurate.
+    record.updated_at = datetime.now(timezone.utc)
+
+    # US06: Record the authorised staff action.
     audit = AuditLog(
         staff_user_id=g.current_staff.id,
         action="update",
         resource_type="support_request",
-        resource_id=record.id
+        resource_id=record.id,
     )
 
-    # Save the update and audit record in one transaction
+    # Save the request update and audit record together.
     db.session.add(audit)
     db.session.commit()
 
