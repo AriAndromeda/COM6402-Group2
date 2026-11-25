@@ -42,6 +42,16 @@
             background: rgba(255,255,255,0.35);
         }
 
+        .refresh-btn:focus-visible {
+            outline: 2px solid #fff;
+            outline-offset: 2px;
+        }
+
+        /* Focus indicator for metric cards */
+        .metric-card:focus-within {
+            box-shadow: 0 0 0 3px rgba(43,108,176,0.5);
+        }
+
         .container {
             max-width: 1100px;
             margin: 2rem auto;
@@ -73,7 +83,7 @@
         .metric-card .label {
             margin-top: 0.3rem;
             font-size: 0.9rem;
-            color: #718096;
+            color: #4a5568;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -136,22 +146,32 @@
 
         /* ---- Capacity bar ---- */
         .capacity-bar {
-            width: 100%;
-            height: 8px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             background: #e2e8f0;
             border-radius: 4px;
-            overflow: hidden;
+            padding: 2px 6px;
         }
 
         .capacity-fill {
-            height: 100%;
+            height: 8px;
             border-radius: 4px;
             transition: width 0.3s ease;
+            min-width: 16px;
         }
 
-        .fill-high   { background: #38a169; }
-        .fill-medium { background: #dd6b20; }
-        .fill-low    { background: #e53e3d; }
+        .fill-high   { background: #e53e3d; }  /* high utilisation — red */
+        .fill-medium { background: #dd6b20; }  /* medium — orange */
+        .fill-low    { background: #38a169; }  /* low utilisation — green */
+
+        .capacity-pct {
+            font-size: 0.85rem;
+            color: #4a5568;
+            white-space: nowrap;
+            min-width: 2.5ch;
+            text-align: right;
+        }
 
         /* ---- Summary row ---- */
         .summary-row td {
@@ -162,8 +182,38 @@
         footer {
             text-align: center;
             padding: 1.5rem;
-            color: #a0aec0;
+            color: #64748b;
             font-size: 0.85rem;
+        }
+
+        /* ===== Accessibility fixes ===== */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #2b6cb0;
+            color: white;
+            padding: 0.5rem 1rem;
+            z-index: 1000;
+            font-size: 0.9rem;
+            text-decoration: none;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Screen reader only - visually hidden but accessible */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         /* ===== Responsive breakpoints ===== */
@@ -323,38 +373,41 @@
 </head>
 <body>
 
-<header>
+<!-- Skip link for keyboard users -->
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
+<header role="banner">
     <div>
-        <h1>&#x1F3E1; Heat Shield – Staff Dashboard</h1>
-        <p>Workload overview &amp; cooling-centre availability at a glance</p>
+        <h1>Heat Shield – Staff Dashboard</h1>
+        <p>Current requests and centre capacity</p>
     </div>
-    <a href="{{ request.path }}" class="refresh-btn">&#x21BB; Refresh</a>
+    <button type="button" class="refresh-btn" onclick="location.reload()" aria-label="Refresh dashboard data">&#x21BB; Refresh</button>
 </header>
 
-<div class="container">
+<main id="main-content" class="container">
 
     <!-- ====== REQUEST METRICS ====== -->
-    <div class="metrics">
-        <div class="metric-card">
-            <div class="value">{{ total_requests }}</div>
-            <div class="label">Total Requests</div>
+    <div class="metrics" role="group" aria-label="Request metrics summary">
+        <div class="metric-card" role="region" aria-label="Total Requests: {{ total_requests }}">
+            <span class="value" aria-hidden="true">{{ total_requests }}</span>
+            <span class="label">Total Requests</span>
         </div>
-        <div class="metric-card outstanding">
-            <div class="value">{{ outstanding_count }}</div>
-            <div class="label">Outstanding</div>
+        <div class="metric-card outstanding" role="region" aria-label="Outstanding requests: {{ outstanding_count }}">
+            <span class="value" aria-hidden="true">{{ outstanding_count }}</span>
+            <span class="label">Outstanding</span>
         </div>
-        <div class="metric-card">
-            <div class="value">{{ completed_count }}</div>
-            <div class="label">Completed</div>
+        <div class="metric-card" role="region" aria-label="Completed requests: {{ completed_count }}">
+            <span class="value" aria-hidden="true">{{ completed_count }}</span>
+            <span class="label">Completed</span>
         </div>
-        <div class="metric-card">
-            <div class="value">{{ in_progress_count }}</div>
-            <div class="label">In Progress</div>
+        <div class="metric-card" role="region" aria-label="In Progress requests: {{ in_progress_count }}">
+            <span class="value" aria-hidden="true">{{ in_progress_count }}</span>
+            <span class="label">In Progress</span>
         </div>
     </div>
 
     <!-- ====== BREAKDOWN TABLE ====== -->
-    <h2>Support Request Breakdown</h2>
+    <h2>Requests</h2>
     <table id="requests-table">
         <thead>
             <tr>
@@ -376,11 +429,11 @@
                 <td data-label="Priority">{{ r.priority|capfirst }}</td>
                 <td data-label="Status">
                     {% if r.status == "new" %}
-                        <span class="badge badge-new">{{ r.status }}</span>
+                        <span class="badge badge-new" role="status" aria-label="Status: new">{{ r.status }}</span>
                     {% elif r.status == "in progress" %}
-                        <span class="badge badge-progress">{{ r.status }}</span>
+                        <span class="badge badge-progress" role="status" aria-label="Status: in progress">{{ r.status }}</span>
                     {% else %}
-                        <span class="badge badge-open">{{ r.status }}</span>
+                        <span class="badge badge-open" role="status" aria-label="Status: {{ r.status }}">{{ r.status }}</span>
                     {% endif %}
                 </td>
             </tr>
@@ -391,18 +444,18 @@
     </table>
 
     <!-- ====== CENTRE AVAILABILITY ====== -->
-    <h2>Cooling Centre Availability</h2>
+    <h2>Centres</h2>
     <div class="table-wrapper">
         <table id="centres-table">
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Area</th>
-                    <th>Status</th>
-                    <th>Opening Hours</th>
-                    <th>Total Capacity</th>
-                    <th>Spaces Available</th>
-                    <th>Utilisation</th>
+                    <th id="th-name">Name</th>
+                    <th id="th-area">Area</th>
+                    <th id="th-status">Status</th>
+                    <th id="th-hours">Opening Hours</th>
+                    <th id="th-capacity">Total Capacity</th>
+                    <th id="th-available">Spaces Available</th>
+                    <th id="th-utilisation">Utilisation</th>
                 </tr>
             </thead>
             <tbody>
@@ -412,20 +465,20 @@
                     <td data-label="Area">{{ c.area }}</td>
                     <td data-label="Status">
                         {% if c.status == "open" %}
-                            <span class="badge badge-open">{{ c.status }}</span>
+                            <span class="badge badge-open" role="status" aria-label="Centre status: open">{{ c.status }}</span>
                         {% else %}
-                            <span class="badge badge-closed">{{ c.status }}</span>
+                            <span class="badge badge-closed" role="status" aria-label="Centre status: closed">{{ c.status }}</span>
                         {% endif %}
                     </td>
                     <td data-label="Hours">{{ c.opening_hours }}</td>
                     <td data-label="Capacity">{{ c.capacity }}</td>
                     <td data-label="Available">{{ c.spaces_available }}</td>
                     <td data-label="Utilisation">
-                        <div class="capacity-bar">
-                            <div class="capacity-fill {% if c.utilisation_pct >= 75 %}fill-low{% elif c.utilisation_pct >= 40 %}fill-medium{% else %}fill-high{% endif %}"
-                                 style="width: {{ c.utilisation_pct }}%"></div>
+                        <div class="capacity-bar" role="progressbar" aria-valuenow="{{ c.utilisation_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Utilisation: {{ c.utilisation_pct }}%">
+                            <div class="capacity-fill {% if c.utilisation_pct >= 75 %}fill-high{% elif c.utilisation_pct >= 40 %}fill-medium{% else %}fill-low{% endif %}"
+                                 style="width: calc({{ c.utilisation_pct }}% - 2.5ch)" aria-hidden="true"></div>
+                            <span class="capacity-pct" aria-hidden="true">{{ c.utilisation_pct }}</span>
                         </div>
-                        <span style="font-size:0.8rem; color:#718096;">{{ c.utilisation_pct }}%</span>
                     </td>
                 </tr>
                 {% empty %}
@@ -434,18 +487,18 @@
 
                 <!-- Summary row -->
                 <tr class="summary-row">
-                    <td colspan="4"><strong>Total</strong></td>
-                    <td>{{ total_capacity }}</td>
-                    <td>{{ total_available }}</td>
-                    <td>{{ overall_utilisation_pct }}%</td>
+                    <td colspan="4" headers="th-name th-area th-status th-hours"><strong>Total</strong></td>
+                    <td headers="th-capacity">{{ total_capacity }}</td>
+                    <td headers="th-available">{{ total_available }}</td>
+                    <td headers="th-utilisation">{{ overall_utilisation_pct }}%</td>
                 </tr>
             </tbody>
         </table>
     </div>
 
-</div>
+</main>
 
-<footer>Heat Shield &middot; Dashboard generated at runtime from live API data</footer>
+<footer>Data refreshes automatically — last updated {{ now }}</footer>
 
 </body>
 </html>
