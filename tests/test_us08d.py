@@ -1,10 +1,10 @@
-
 """US08d: Concurrent booking and capacity-integrity tests."""
+
+import hashlib
 
 import pytest
 
-from app import app, db
-
+from app import AuditLog, StaffUser, app, db
 
 @pytest.fixture
 def file_db(tmp_path):
@@ -34,7 +34,26 @@ def file_db(tmp_path):
     with app.app_context():
         db.create_all()
 
-        yield app.test_client()
+        # Create an authorised staff account for testing.
+        token = "us08d-test-token-only"
+
+        staff = StaffUser(
+            username="us08d_staff",
+            role="staff",
+            token_hash=hashlib.sha256(
+                token.encode("utf-8")
+            ).hexdigest(),
+            is_active=True,
+        )
+
+        db.session.add(staff)
+        db.session.commit()
+
+        # Use authenticated requests in US08d tests.
+        client = app.test_client()
+        client.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+
+        yield client
 
         db.session.remove()
         db.drop_all()
@@ -93,7 +112,17 @@ def test_last_available_space_cannot_be_overbooked(file_db):
     # Only one booking should exist.
     with app.app_context():
         from app import Booking
+
         assert db.session.query(Booking).count() == 1
+
+        # One successful booking must produce exactly one audit record.
+        booking_audits = db.session.query(AuditLog).filter_by(
+            action="create",
+            resource_type="booking",
+        ).all()
+
+        assert len(booking_audits) == 1
+        assert booking_audits[0].staff_user_id is not None
 
 
 def test_concurrent_bookings_do_not_overbook(file_db):
@@ -151,6 +180,9 @@ def test_concurrent_bookings_do_not_overbook(file_db):
         with app.test_client() as thread_client:
             return thread_client.post(
                 "/api/bookings",
+                headers={
+                    "Authorization": "Bearer us08d-test-token-only",
+                },
                 json={
                     "request_id": request_id,
                     "centre_id": centre_id,

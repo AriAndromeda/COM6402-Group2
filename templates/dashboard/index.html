@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heat Shield – Staff Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f0f4f8;
+            color: #1a202c;
+        }
+
+        header {
+            background: linear-gradient(135deg, #2b6cb0, #3182ce);
+            color: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 { font-size: 1.6rem; font-weight: 700; }
+        header p { margin-top: 0.3rem; opacity: 0.85; font-size: 0.95rem; }
+
+        .refresh-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            padding: 0.5rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: background 0.2s ease;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.35);
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }
+
+        /* ---- Metric cards row ---- */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.4rem 1.6rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+
+        .metric-card .value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #2b6cb0;
+        }
+
+        .metric-card .label {
+            margin-top: 0.3rem;
+            font-size: 0.9rem;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-card.outstanding .value { color: #dd6b20; }
+        .metric-card.completed   .value { color: #38a169; }
+
+        /* ---- Section headings ---- */
+        h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #cbd5e0;
+        }
+
+        /* ---- Centre table ---- */
+        .table-wrapper {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            overflow-x: auto;
+            margin-bottom: 2rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            background: #edf2f7;
+            padding: 0.85rem 1rem;
+            text-align: left;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #4a5568;
+        }
+
+        tbody td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.95rem;
+        }
+
+        tbody tr:hover { background: #f7fafc; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .badge-open    { background: #c6f6d5; color: #276749; }
+        .badge-closed  { background: #fed7d7; color: #9b2c2c; }
+        .badge-new     { background: #bee3f8; color: #2a4367; }
+        .badge-progress{ background: #fefcbf; color: #744210; }
+
+        /* ---- Capacity bar ---- */
+        .capacity-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .capacity-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .fill-high   { background: #38a169; }
+        .fill-medium { background: #dd6b20; }
+        .fill-low    { background: #e53e3d; }
+
+        /* ---- Summary row ---- */
+        .summary-row td {
+            font-weight: 700;
+            background: #edf2f7;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            color: #a0aec0;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div>
+        <h1>&#x1F3E1; Heat Shield – Staff Dashboard</h1>
+        <p>Workload overview &amp; cooling-centre availability at a glance</p>
+    </div>
+    <a href="{{ request.path }}" class="refresh-btn">&#x21BB; Refresh</a>
+</header>
+
+<div class="container">
+
+    <!-- ====== REQUEST METRICS ====== -->
+    <div class="metrics">
+        <div class="metric-card">
+            <div class="value">{{ total_requests }}</div>
+            <div class="label">Total Requests</div>
+        </div>
+        <div class="metric-card outstanding">
+            <div class="value">{{ outstanding_count }}</div>
+            <div class="label">Outstanding</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">{{ completed_count }}</div>
+            <div class="label">Completed</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">{{ in_progress_count }}</div>
+            <div class="label">In Progress</div>
+        </div>
+    </div>
+
+    <!-- ====== BREAKDOWN TABLE ====== -->
+    <h2>Support Request Breakdown</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Area</th>
+                <th>Priority</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in requests_data %}
+            <tr>
+                <td>{{ r.id }}</td>
+                <td>{{ r.description }}</td>
+                <td>{{ r.category }}</td>
+                <td>{{ r.area }}</td>
+                <td>{{ r.priority|capfirst }}</td>
+                <td>
+                    {% if r.status == "new" %}
+                        <span class="badge badge-new">{{ r.status }}</span>
+                    {% elif r.status == "in progress" %}
+                        <span class="badge badge-progress">{{ r.status }}</span>
+                    {% else %}
+                        <span class="badge badge-open">{{ r.status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" style="text-align:center; color:#a0aec0;">No requests found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- ====== CENTRE AVAILABILITY ====== -->
+    <h2>Cooling Centre Availability</h2>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Area</th>
+                    <th>Status</th>
+                    <th>Opening Hours</th>
+                    <th>Total Capacity</th>
+                    <th>Spaces Available</th>
+                    <th>Utilisation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in centres %}
+                <tr>
+                    <td>{{ c.name }}</td>
+                    <td>{{ c.area }}</td>
+                    <td>
+                        {% if c.status == "open" %}
+                            <span class="badge badge-open">{{ c.status }}</span>
+                        {% else %}
+                            <span class="badge badge-closed">{{ c.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ c.opening_hours }}</td>
+                    <td>{{ c.capacity }}</td>
+                    <td>{{ c.spaces_available }}</td>
+                    <td>
+                        <div class="capacity-bar">
+                            <div class="capacity-fill {% if c.utilisation_pct >= 75 %}fill-low{% elif c.utilisation_pct >= 40 %}fill-medium{% else %}fill-high{% endif %}"
+                                 style="width: {{ c.utilisation_pct }}%"></div>
+                        </div>
+                        <span style="font-size:0.8rem; color:#718096;">{{ c.utilisation_pct }}%</span>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" style="text-align:center; color:#a0aec0;">No centres found.</td></tr>
+                {% endfor %}
+
+                <!-- Summary row -->
+                <tr class="summary-row">
+                    <td colspan="4"><strong>Total</strong></td>
+                    <td>{{ total_capacity }}</td>
+                    <td>{{ total_available }}</td>
+                    <td>{{ overall_utilisation_pct }}%</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<footer>Heat Shield &middot; Dashboard generated at runtime from live API data</footer>
+
+</body>
+</html>
