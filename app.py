@@ -27,6 +27,7 @@ from functools import wraps
 
 from flask import Flask, g, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import update
 
 # 1. Set up Flask and the SQLite database.
 app = Flask(__name__)
@@ -640,45 +641,65 @@ def create_booking():
         return jsonify({"error": "Centre not found"}), 404
 
     # Happy-path booking: centre must be open with enough remaining spaces.
-    if centre.spaces_available < spaces_required:
-        return jsonify({"error": "Not enough spaces available"}), 409
-    if centre.status.lower() != "open":
-        return jsonify({"error": "Centre is closed"}), 409
+    # US08d: Atomically check and reserve available capacity.
+    # A conditional UPDATE prevents competing requests from
+    # reserving the same remaining spaces.
+    try:
+        result = db.session.execute(
+            update(CoolingCentre)
+            .where(
+                CoolingCentre.id == centre_id,
+                db.func.lower(CoolingCentre.status) == "open",
+                CoolingCentre.spaces_available >= spaces_required,
+            )
+            .values(
+                spaces_available=(
+                    CoolingCentre.spaces_available - spaces_required
+                )
+            )
+        )
 
+        if result.rowcount != 1:
+            db.session.rollback()
 
-    # Create the booking
-    booking = Booking(
-        request_id=request_id,
-        centre_id=centre_id,
-        booking_date=data["booking_date"].strip(),
-        booking_time=data["booking_time"].strip(),
-        spaces_required=spaces_required,
-        status="confirmed",
-    )
+            # Return an appropriate error without reserving spaces.
+            db.session.refresh(centre)
 
-    # Reduce the centre's available capacity
-    centre.spaces_available -= spaces_required
+            if centre.status.lower() != "open":
+                return jsonify({"error": "Centre is closed"}), 409
 
-    # Stage the booking and obtain its database ID
-    db.session.add(booking)
-    db.session.flush()
+            return jsonify({"error": "Not enough spaces available"}), 409
 
-    # US06: Record the successful booking action
-    audit = AuditLog(
-        staff_user_id=g.current_staff.id,
-        action="create",
-        resource_type="booking",
-        resource_id=booking.id
-    )
+        booking = Booking(
+            request_id=request_id,
+            centre_id=centre_id,
+            booking_date=data["booking_date"].strip(),
+            booking_time=data["booking_time"].strip(),
+            spaces_required=spaces_required,
+            status="confirmed",
+        )
 
-    db.session.add(audit)
+                # Stage the booking and obtain its database ID.
+        db.session.add(booking)
+        db.session.flush()
 
-    # Commit the booking, capacity change and audit together
-    db.session.commit()
+        # US06: Record the authorised staff member who created the booking.
+        audit = AuditLog(
+            staff_user_id=g.current_staff.id,
+            action="create",
+            resource_type="booking",
+            resource_id=booking.id,
+        )
+        db.session.add(audit)
 
-    return jsonify(booking.to_dict()), 201
+        # US06 + US08d: Commit capacity, booking and audit atomically.
+        db.session.commit()
 
+        return jsonify(booking.to_dict()), 201
 
+    except Exception:
+        db.session.rollback()
+        raise
 
 @app.get("/api/bookings/<int:booking_id>")
 def get_booking(booking_id):
