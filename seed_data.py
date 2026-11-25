@@ -12,7 +12,6 @@ inserts new ones. Bookings reference actual database IDs rather than fixed
 values, so they always point to valid records.
 """
 
-import os
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify
