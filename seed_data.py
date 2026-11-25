@@ -23,53 +23,52 @@ db = SQLAlchemy(app)
 
 
 # ── Schema migration helper ──────────────────────────────────────────
-def _ensure_seeded_column(table_name: str):
-    """Add the ``seeded`` column if it does not already exist.
 
+def _ensure_column(table_name: str, column_def: str):
+    """Add a column if it does not already exist.
+
+    ``column_def`` is the full ``ALTER TABLE … ADD COLUMN …`` fragment.
     Safe to call multiple times — SQLite raises an error when the column
     is present, which we silently ignore.
     """
     with app.app_context():
         try:
-            db.session.execute(
-                db.text(f"ALTER TABLE {table_name} ADD COLUMN seeded BOOLEAN DEFAULT 0")
-            )
+            db.session.execute(db.text(f"ALTER TABLE {table_name} {column_def}"))
             db.session.commit()
         except Exception:
-            # Column already exists — nothing to do.
             pass
 
 
 def ensure_seeded_columns():
-    """Ensure all relevant tables have the ``seeded`` column."""
-    _ensure_seeded_column("cooling_centre")
-    _ensure_seeded_column("support_request")
-    _ensure_seeded_column("booking")
+    """Ensure all relevant tables have the ``seeded`` column and timestamps."""
+    _ensure_column("cooling_centre", "ADD COLUMN seeded BOOLEAN DEFAULT 0")
+    _ensure_column("support_request", "ADD COLUMN seeded BOOLEAN DEFAULT 0")
+    _ensure_column("booking", "ADD COLUMN seeded BOOLEAN DEFAULT 0")
+    # Timestamps are needed by the INSERT statements below.
+    _ensure_column(
+        "support_request", "ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+    )
+    _ensure_column(
+        "support_request", "ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+    )
+
+# ── Full model definitions (for db.create_all table creation) ────────
 
 
-
-# ── Reuse the same models from app.py ────────────────────────────────
 class SupportRequest(db.Model):
+    __tablename__ = "support_request"
     id = db.Column(db.Integer, primary_key=True)
     description = db.Column(db.String(500), nullable=False)
     category = db.Column(db.String(50), nullable=False)
     area = db.Column(db.String(80), nullable=False)
     priority = db.Column(db.String(20), nullable=False, default="medium")
     status = db.Column(db.String(20), nullable=False, default="new")
-    seeded = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, nullable=False)
     updated_at = db.Column(db.DateTime, nullable=False)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        now = datetime.now(timezone.utc)
-        if self.created_at is None:
-            self.created_at = now
-        if self.updated_at is None:
-            self.updated_at = now
-
 
 class CoolingCentre(db.Model):
+    __tablename__ = "cooling_centre"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     area = db.Column(db.String(80), nullable=False)
@@ -77,10 +76,10 @@ class CoolingCentre(db.Model):
     spaces_available = db.Column(db.Integer, nullable=False)
     opening_hours = db.Column(db.String(80), nullable=False, default="")
     status = db.Column(db.String(20), nullable=False, default="open")
-    seeded = db.Column(db.Boolean, default=False)
 
 
 class Booking(db.Model):
+    __tablename__ = "booking"
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.Integer, db.ForeignKey("support_request.id"), nullable=False)
     centre_id = db.Column(db.Integer, db.ForeignKey("cooling_centre.id"), nullable=False)
@@ -88,8 +87,6 @@ class Booking(db.Model):
     booking_time = db.Column(db.String(20), nullable=False)
     spaces_required = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(20), nullable=False, default="confirmed")
-    seeded = db.Column(db.Boolean, default=False)
-
 
 # ── Seed data definitions ────────────────────────────────────────────
 
@@ -134,17 +131,26 @@ def seed():
         # Ensure schema is compatible (adds ``seeded`` column if missing).
         ensure_seeded_columns()
 
-        # Insert centres (skip duplicates matched by name).
+        now = datetime.now(timezone.utc)
+
+        # Insert centres (skip duplicates matched by name, using raw SQL).
         created_centres = 0
         centre_id_map = {}  # name -> id for booking references.
         for c in CENTRES:
-            existing = CoolingCentre.query.filter_by(name=c["name"]).first()
-            if existing is not None:
-                centre_id_map[c["name"]] = existing.id
-                continue  # skip duplicate
+            row = db.session.execute(
+                db.text("SELECT id FROM cooling_centre WHERE name = :name LIMIT 1"),
+                {"name": c["name"]},
+            ).first()
+            if row is not None:
+                centre_id_map[c["name"]] = row.id
+                continue
 
-            centre = CoolingCentre(**c, seeded=True)
-            db.session.add(centre)
+            db.session.execute(
+                db.text("""INSERT INTO cooling_centre
+                           (name, area, capacity, spaces_available, opening_hours, status, seeded)
+                           VALUES (:name, :area, :capacity, :spaces_available, :opening_hours, :status, 1)"""),
+                {**c, "seeded": True},
+            )
             created_centres += 1
         db.session.commit()
 
@@ -156,13 +162,20 @@ def seed():
         created_requests = 0
         request_id_map = {}  # description -> id for booking references.
         for r in REQUESTS:
-            existing = SupportRequest.query.filter_by(description=r["description"]).first()
-            if existing is not None:
-                request_id_map[r["description"]] = existing.id
-                continue  # skip duplicate
+            row = db.session.execute(
+                db.text("SELECT id FROM support_request WHERE description = :desc LIMIT 1"),
+                {"desc": r["description"]},
+            ).first()
+            if row is not None:
+                request_id_map[r["description"]] = row.id
+                continue
 
-            req = SupportRequest(**r, seeded=True)
-            db.session.add(req)
+            db.session.execute(
+                db.text("""INSERT INTO support_request
+                           (description, category, area, priority, status, seeded, created_at, updated_at)
+                           VALUES (:description, :category, :area, :priority, :status, 1, :now, :now)"""),
+                {**r, "seeded": True, "now": now},
+            )
             created_requests += 1
         db.session.commit()
 
@@ -173,31 +186,35 @@ def seed():
         # Insert bookings using dynamic ID lookups.
         created_bookings = 0
         for b in BOOKINGS:
-            req = SupportRequest.query.filter_by(description=b["request_desc"]).first()
-            centre = CoolingCentre.query.filter_by(name=b["centre_name"]).first()
-            if req is None or centre is None:
+            req_row = db.session.execute(
+                db.text("SELECT id FROM support_request WHERE description = :desc LIMIT 1"),
+                {"desc": b["request_desc"]},
+            ).first()
+            centre_row = db.session.execute(
+                db.text("SELECT id FROM cooling_centre WHERE name = :name LIMIT 1"),
+                {"name": b["centre_name"]},
+            ).first()
+
+            if req_row is None or centre_row is None:
                 print(f"  Skipping booking — request or centre not found.")
                 continue
 
             # Check for duplicate booking.
-            existing_booking = Booking.query.filter_by(
-                request_id=req.id,
-                centre_id=centre.id,
-                booking_date=b["booking_date"],
-                booking_time=b["booking_time"],
+            dup = db.session.execute(
+                db.text("""SELECT id FROM booking
+                           WHERE request_id = :request_id AND centre_id = :centre_id
+                           AND booking_date = :booking_date AND booking_time = :booking_time LIMIT 1"""),
+                {"request_id": req_row.id, "centre_id": centre_row.id, **b},
             ).first()
-            if existing_booking is not None:
-                continue  # skip duplicate
+            if dup is not None:
+                continue
 
-            booking = Booking(
-                request_id=req.id,
-                centre_id=centre.id,
-                booking_date=b["booking_date"],
-                booking_time=b["booking_time"],
-                spaces_required=b["spaces_required"],
-                seeded=True,
+            db.session.execute(
+                db.text("""INSERT INTO booking
+                           (request_id, centre_id, booking_date, booking_time, spaces_required, status, seeded)
+                           VALUES (:request_id, :centre_id, :booking_date, :booking_time, :spaces_required, 'confirmed', 1)"""),
+                {"request_id": req_row.id, "centre_id": centre_row.id, **b},
             )
-            db.session.add(booking)
             created_bookings += 1
         db.session.commit()
 

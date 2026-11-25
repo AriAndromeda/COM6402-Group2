@@ -19,47 +19,51 @@ db = SQLAlchemy(app)
 
 
 # ── Schema migration helper ──────────────────────────────────────────
-def _ensure_seeded_column(table_name: str):
-    """Add the ``seeded`` column if it does not already exist.
 
+def _ensure_column(table_name: str, column_def: str):
+    """Add a column if it does not already exist.
+
+    ``column_def`` is the full ``ALTER TABLE … ADD COLUMN …`` fragment.
     Safe to call multiple times — SQLite raises an error when the column
     is present, which we silently ignore.
     """
     with app.app_context():
         try:
-            db.session.execute(
-                db.text(f"ALTER TABLE {table_name} ADD COLUMN seeded BOOLEAN DEFAULT 0")
-            )
+            db.session.execute(db.text(f"ALTER TABLE {table_name} {column_def}"))
             db.session.commit()
         except Exception:
-            # Column already exists — nothing to do.
             pass
 
 
 def ensure_seeded_columns():
-    """Ensure all relevant tables have the ``seeded`` column."""
-    _ensure_seeded_column("cooling_centre")
-    _ensure_seeded_column("support_request")
-    _ensure_seeded_column("booking")
+    """Ensure all relevant tables have the ``seeded`` column and timestamps."""
+    _ensure_column("cooling_centre", "ADD COLUMN seeded BOOLEAN DEFAULT 0")
+    _ensure_column("support_request", "ADD COLUMN seeded BOOLEAN DEFAULT 0")
+    _ensure_column("booking", "ADD COLUMN seeded BOOLEAN DEFAULT 0")
+    # Timestamps are needed by the DELETE statements (they reference seeded).
+    _ensure_column(
+        "support_request", "ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+    )
+    _ensure_column(
+        "support_request", "ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+    )
 
+# ── Minimal model definitions (for table existence only) ─────────────
 
 
 class SupportRequest(db.Model):
     __tablename__ = "support_request"
     id = db.Column(db.Integer, primary_key=True)
-    seeded = db.Column(db.Boolean, default=False)
 
 
 class CoolingCentre(db.Model):
     __tablename__ = "cooling_centre"
     id = db.Column(db.Integer, primary_key=True)
-    seeded = db.Column(db.Boolean, default=False)
 
 
 class Booking(db.Model):
     __tablename__ = "booking"
     id = db.Column(db.Integer, primary_key=True)
-    seeded = db.Column(db.Boolean, default=False)
 
 
 def clear(keep_centres: bool = False):
@@ -68,22 +72,25 @@ def clear(keep_centres: bool = False):
         # Ensure schema is compatible (adds ``seeded`` column if missing).
         ensure_seeded_columns()
 
-        # Delete bookings first (foreign-key dependency).
-        deleted_bookings = Booking.query.filter_by(seeded=True).delete()
+        # Delete bookings first (foreign-key dependency) using raw SQL.
+        result = db.session.execute(db.text("DELETE FROM booking WHERE seeded = 1"))
         db.session.commit()
-        print(f"  Removed {deleted_bookings} seeded booking(s).")
+        print(f"  Removed {result.rowcount} seeded booking(s).")
 
-        # Delete support requests.
-        deleted_requests = SupportRequest.query.filter_by(seeded=True).delete()
+        # Delete support requests using raw SQL.
+        result = db.session.execute(db.text("DELETE FROM support_request WHERE seeded = 1"))
         db.session.commit()
-        print(f"  Removed {deleted_requests} seeded request(s).")
+        print(f"  Removed {result.rowcount} seeded request(s).")
 
         if not keep_centres:
-            deleted_centres = CoolingCentre.query.filter_by(seeded=True).delete()
+            result = db.session.execute(db.text("DELETE FROM cooling_centre WHERE seeded = 1"))
             db.session.commit()
-            print(f"  Removed {deleted_centres} seeded centre(s).")
+            print(f"  Removed {result.rowcount} seeded centre(s).")
         else:
-            count = CoolingCentre.query.filter_by(seeded=False).count()
+            count_result = db.session.execute(
+                db.text("SELECT COUNT(*) FROM cooling_centre WHERE seeded = 0")
+            )
+            count = count_result.scalar()
             print(f"  Kept {count} non-seeded cooling centre(s).")
 
         print("\nDone! Seed data cleared.")
