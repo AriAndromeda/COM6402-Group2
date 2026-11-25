@@ -274,13 +274,28 @@
                 white-space: nowrap;
             }
 
-            /* Capacity bar stacks vertically */
+            /* Capacity bar stacks vertically, percentage below */
             tbody td .capacity-bar { margin-bottom: 0.25rem; }
+
+            tbody td .capacity-fill { height: 6px; }
+
+            tbody td span[style*="font-size"] {
+                display: block;
+                text-align: right;
+                width: 100%;
+                margin-top: 0.15rem;
+            }
+
+            /* Summary row — hide on mobile (totals visible in metric cards) */
+            .summary-row { display: none; }
 
             /* Centre availability table — same card treatment */
             #centres-table tbody tr {
                 margin-bottom: 1rem;
             }
+
+            /* Prevent tables from collapsing too narrow */
+            .table-wrapper { min-width: 280px; }
 
             footer { padding: 0.75rem; font-size: 0.75rem; }
         }
