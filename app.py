@@ -21,6 +21,7 @@ import os
 
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import update
 
 # 1. Set up Flask and the SQLite database.
 app = Flask(__name__)
@@ -385,23 +386,55 @@ def create_booking():
         return jsonify({"error": "Centre not found"}), 404
 
     # Happy-path booking: centre must be open with enough remaining spaces.
-    if centre.spaces_available < spaces_required:
-        return jsonify({"error": "Not enough spaces available"}), 409
-    if centre.status.lower() != "open":
-        return jsonify({"error": "Centre is closed"}), 409
+    # US08d: Atomically check and reserve available capacity.
+    # A conditional UPDATE prevents competing requests from
+    # reserving the same remaining spaces.
+    try:
+        result = db.session.execute(
+            update(CoolingCentre)
+            .where(
+                CoolingCentre.id == centre_id,
+                db.func.lower(CoolingCentre.status) == "open",
+                CoolingCentre.spaces_available >= spaces_required,
+            )
+            .values(
+                spaces_available=(
+                    CoolingCentre.spaces_available - spaces_required
+                )
+            )
+        )
 
-    booking = Booking(
-        request_id=request_id,
-        centre_id=centre_id,
-        booking_date=data["booking_date"].strip(),
-        booking_time=data["booking_time"].strip(),
-        spaces_required=spaces_required,
-        status="confirmed",
-    )
-    centre.spaces_available -= spaces_required
-    db.session.add(booking)
-    db.session.commit()
-    return jsonify(booking.to_dict()), 201
+        if result.rowcount != 1:
+            db.session.rollback()
+
+            # Return an appropriate error without reserving spaces.
+            db.session.refresh(centre)
+
+            if centre.status.lower() != "open":
+                return jsonify({"error": "Centre is closed"}), 409
+
+            return jsonify({"error": "Not enough spaces available"}), 409
+
+        booking = Booking(
+            request_id=request_id,
+            centre_id=centre_id,
+            booking_date=data["booking_date"].strip(),
+            booking_time=data["booking_time"].strip(),
+            spaces_required=spaces_required,
+            status="confirmed",
+        )
+
+        db.session.add(booking)
+
+        # Capacity reduction and booking creation are committed together.
+        db.session.commit()
+
+        return jsonify(booking.to_dict()), 201
+
+    except Exception:
+        db.session.rollback()
+        raise
+
 
 
 @app.get("/api/bookings/<int:booking_id>")
