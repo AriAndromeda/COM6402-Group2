@@ -2,6 +2,7 @@
 
 import logging
 import os
+from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
@@ -27,6 +28,35 @@ def _get_json(path):
     return []
 
 
+def _requests_path(status="", priority="", area="", category=""):
+    """Build /requests path with optional Flask filter query params (US07b)."""
+    params = {}
+    for key, value in (
+        ("status", status),
+        ("priority", priority),
+        ("area", area),
+        ("category", category),
+    ):
+        if isinstance(value, str) and value.strip():
+            params[key] = value.strip()
+    if not params:
+        return "/requests"
+    return f"/requests?{urlencode(params)}"
+
+
+def _apply_search(requests_data, query):
+    """Filter requests whose description contains the search text (case-insensitive)."""
+    if not isinstance(query, str) or not query.strip():
+        return requests_data
+    needle = query.strip().lower()
+    return [
+        row
+        for row in requests_data
+        if needle in str(row.get("description", "")).lower()
+        or needle == str(row.get("id", ""))
+    ]
+
+
 def index(request):
     """Render the staff dashboard with request metrics and centre availability.
 
@@ -35,18 +65,39 @@ def index(request):
        this URL sees all support-request data. Add auth before any deployment.
     """
 
-    # Fetch support requests from Flask API.
-    requests_data = _get_json("/requests")
+    # US07b filter / search inputs (GET form on the dashboard).
+    status = request.GET.get("status", "")
+    priority = request.GET.get("priority", "")
+    area = request.GET.get("area", "")
+    search_query = request.GET.get("q", "")
+    filters_active = any(
+        isinstance(value, str) and value.strip()
+        for value in (status, priority, area, search_query)
+    )
 
-    # Count requests by status.
-    total_requests = len(requests_data)
-    new_count = sum(1 for r in requests_data if r.get("status") == "new")
-    in_progress_count = sum(1 for r in requests_data if r.get("status") == "in progress")
-    completed_count = sum(1 for r in requests_data if r.get("status") == "completed")
+    # Metrics stay based on the full queue (US07a behaviour).
+    all_requests = _get_json("/requests")
+
+    # Queue list uses Flask filters, then optional description search.
+    queue_path = _requests_path(status=status, priority=priority, area=area)
+    requests_data = _get_json(queue_path)
+    if not isinstance(requests_data, list):
+        requests_data = []
+    requests_data = _apply_search(requests_data, search_query)
+
+    # Count requests by status (from full dataset).
+    total_requests = len(all_requests) if isinstance(all_requests, list) else 0
+    new_count = sum(1 for r in all_requests if r.get("status") == "new")
+    in_progress_count = sum(
+        1 for r in all_requests if r.get("status") == "in progress"
+    )
+    completed_count = sum(1 for r in all_requests if r.get("status") == "completed")
     outstanding_count = new_count + in_progress_count
 
     # Fetch cooling centres from Flask API.
     centres_data = _get_json("/centres")
+    if not isinstance(centres_data, list):
+        centres_data = []
 
     # Build centre availability list with capacity info.
     centres = []
@@ -72,7 +123,9 @@ def index(request):
 
     # Compute overall utilisation percentage.
     total_used = total_capacity - total_available
-    overall_utilisation = round((total_used / total_capacity * 100), 1) if total_capacity > 0 else 0.0
+    overall_utilisation = (
+        round((total_used / total_capacity * 100), 1) if total_capacity > 0 else 0.0
+    )
 
     context = {
         "total_requests": total_requests,
@@ -85,6 +138,12 @@ def index(request):
         "total_capacity": total_capacity,
         "total_available": total_available,
         "overall_utilisation_pct": overall_utilisation,
+        # US07b form state
+        "filter_status": status,
+        "filter_priority": priority,
+        "filter_area": area,
+        "search_query": search_query,
+        "filters_active": filters_active,
     }
 
     return render(request, "dashboard/index.html", context)

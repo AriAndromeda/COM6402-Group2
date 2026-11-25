@@ -144,3 +144,105 @@ class TestDashboardApiErrorHandling:
         # Check that "No requests found." message appears
         assert b"No requests found." in response.content
         assert b"No centres found." in response.content
+
+
+class TestUs07bSearchableQueue:
+    """US07b: search and filter support requests on the dashboard."""
+
+    def setup_method(self):
+        self.factory = RequestFactory()
+        self.sample_requests = [
+            {
+                "id": 1,
+                "description": "Urgent water assistance",
+                "category": "welfare",
+                "area": "Bolton",
+                "priority": "high",
+                "status": "new",
+            },
+            {
+                "id": 2,
+                "description": "Cooling centre place needed",
+                "category": "cooling",
+                "area": "Manchester",
+                "priority": "low",
+                "status": "in progress",
+            },
+            {
+                "id": 3,
+                "description": "General welfare check",
+                "category": "welfare",
+                "area": "Bolton",
+                "priority": "medium",
+                "status": "completed",
+            },
+        ]
+
+    @patch("dashboard.views._get_json")
+    def test_filter_form_is_shown(self, mock_get):
+        mock_get.return_value = []
+        response = index(self.factory.get("/"))
+        assert response.status_code == 200
+        assert b'name="status"' in response.content
+        assert b'name="priority"' in response.content
+        assert b'name="area"' in response.content
+        assert b'name="q"' in response.content
+
+    @patch("dashboard.views._get_json")
+    def test_status_priority_area_filters_call_flask_api(self, mock_get):
+        """Filters are forwarded to GET /api/requests as query params."""
+        mock_get.return_value = [self.sample_requests[0]]
+
+        request = self.factory.get(
+            "/",
+            data={
+                "status": "new",
+                "priority": "high",
+                "area": "Bolton",
+            },
+        )
+        response = index(request)
+
+        assert response.status_code == 200
+        # Metrics use unfiltered /requests; queue uses filtered path.
+        paths = [call.args[0] for call in mock_get.call_args_list]
+        assert "/requests" in paths
+        filtered = [p for p in paths if "?" in p]
+        assert filtered, "expected a filtered /requests API call"
+        assert "status=new" in filtered[0]
+        assert "priority=high" in filtered[0]
+        assert "area=Bolton" in filtered[0]
+        assert b"Urgent water assistance" in response.content
+
+    @patch("dashboard.views._get_json")
+    def test_combined_filters_and_search_match_results(self, mock_get):
+        mock_get.side_effect = [
+            self.sample_requests,  # metrics (unfiltered)
+            [self.sample_requests[0], self.sample_requests[2]],  # filtered queue
+            [],  # centres
+        ]
+
+        request = self.factory.get(
+            "/",
+            data={"status": "new", "area": "bolton", "q": "water"},
+        )
+        response = index(request)
+
+        assert response.status_code == 200
+        assert b"Urgent water assistance" in response.content
+        assert b"General welfare check" not in response.content
+        assert b"Cooling centre place needed" not in response.content
+
+    @patch("dashboard.views._get_json")
+    def test_no_matching_results_shows_clear_message(self, mock_get):
+        mock_get.side_effect = [
+            self.sample_requests,
+            [],  # filtered queue empty
+            [],  # centres
+        ]
+
+        request = self.factory.get("/", data={"status": "completed", "area": "Liverpool"})
+        response = index(request)
+
+        assert response.status_code == 200
+        assert b"No requests match your search." in response.content
