@@ -25,7 +25,7 @@ def test_create_and_retrieve_request(client):
     assert result.json["area"] == "Bolton"
 
 
-def test_update_request(client):
+def test_update_request(client, staff_headers):
     # Create a support request
     data = {
         "description": "Water assistance needed",
@@ -38,9 +38,10 @@ def test_update_request(client):
 
     # Update the request status
     updated = client.patch(
-        f"/api/requests/{request_id}",
-        json={"status": "in progress"}
-    )
+    f"/api/requests/{request_id}",
+    json={"status": "in progress"},
+    headers=staff_headers
+)
 
     # Check the update was successful
     assert updated.status_code == 200
@@ -122,7 +123,7 @@ def test_invalid_json_input(client):
     result = client.get("/api/requests")
     assert result.json == []
 
-def test_delete_request(client):
+def test_delete_request(client, staff_headers):
     # Create a support request
     response = client.post("/api/requests", json={
         "description": "Water assistance needed",
@@ -134,7 +135,7 @@ def test_delete_request(client):
     request_id = response.json["id"]
 
     # Delete the support request
-    deleted = client.delete(f"/api/requests/{request_id}")
+    deleted = client.delete(f"/api/requests/{request_id}", headers=staff_headers)
 
     # Successful deletion returns HTTP 204
     assert deleted.status_code == 204
