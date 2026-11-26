@@ -1,5 +1,6 @@
 Flask
 Flask-SQLAlchemy
 pytest
+pytest-cov
 django
 requests
