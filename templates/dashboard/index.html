@@ -91,6 +91,83 @@
         .metric-card.outstanding .value { color: #dd6b20; }
         .metric-card.completed   .value { color: #38a169; }
 
+        /* ---- US07b search / filter form ---- */
+        .filter-panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .filter-panel h2 {
+            margin-bottom: 1rem;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: 2fr repeat(3, 1fr) auto auto;
+            gap: 0.75rem;
+            align-items: end;
+        }
+
+        .filter-field label {
+            display: block;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #4a5568;
+            margin-bottom: 0.35rem;
+        }
+
+        .filter-field input,
+        .filter-field select {
+            width: 100%;
+            padding: 0.55rem 0.7rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            background: #fff;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .filter-actions button,
+        .filter-actions a {
+            padding: 0.55rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+            border: 1px solid transparent;
+        }
+
+        .filter-actions button {
+            background: #2b6cb0;
+            color: white;
+            border-color: #2b6cb0;
+        }
+
+        .filter-actions a {
+            background: #edf2f7;
+            color: #2d3748;
+            border-color: #e2e8f0;
+        }
+
+        @media (max-width: 900px) {
+            .filter-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .filter-actions {
+                grid-column: 1 / -1;
+            }
+        }
+
         /* ---- Section headings ---- */
         h2 {
             font-size: 1.25rem;
@@ -406,6 +483,50 @@
         </div>
     </div>
 
+    <!-- ====== US07b SEARCHABLE QUEUE ====== -->
+    <div class="filter-panel">
+        <h2>Searchable Support Queue</h2>
+        <form method="get" action="{{ request.path }}">
+            <div class="filter-grid">
+                <div class="filter-field">
+                    <label for="q">Search</label>
+                    <input id="q" name="q" type="search"
+                           value="{{ search_query }}"
+                           placeholder="Description or request ID">
+                </div>
+                <div class="filter-field">
+                    <label for="status">Status</label>
+                    <select id="status" name="status">
+                        <option value="">Any</option>
+                        <option value="new"{% if filter_status == "new" %} selected{% endif %}>New</option>
+                        <option value="in progress"{% if filter_status == "in progress" %} selected{% endif %}>In progress</option>
+                        <option value="completed"{% if filter_status == "completed" %} selected{% endif %}>Completed</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="priority">Priority</label>
+                    <select id="priority" name="priority">
+                        <option value="">Any</option>
+                        <option value="low"{% if filter_priority == "low" %} selected{% endif %}>Low</option>
+                        <option value="medium"{% if filter_priority == "medium" %} selected{% endif %}>Medium</option>
+                        <option value="high"{% if filter_priority == "high" %} selected{% endif %}>High</option>
+                        <option value="critical"{% if filter_priority == "critical" %} selected{% endif %}>Critical</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="area">Area</label>
+                    <input id="area" name="area" type="text"
+                           value="{{ filter_area }}"
+                           placeholder="e.g. Bolton">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit">Apply</button>
+                    <a href="{{ request.path }}">Clear</a>
+                </div>
+            </div>
+        </form>
+    </div>
+
     <!-- ====== BREAKDOWN TABLE ====== -->
     <h2>Requests</h2>
     <table id="requests-table">
@@ -438,7 +559,15 @@
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" style="text-align:center; color:#a0aec0;">No requests found.</td></tr>
+            <tr>
+                <td colspan="6" style="text-align:center; color:#a0aec0;">
+                    {% if filters_active %}
+                        No requests match your search.
+                    {% else %}
+                        No requests found.
+                    {% endif %}
+                </td>
+            </tr>
             {% endfor %}
         </tbody>
     </table>
