@@ -227,56 +227,11 @@ see `US06_SECURITY_DOCUMENTATION.md`.
 
 ## US19 – Security Testing
 
-US19 hardens the API against common web threats: input sanitisation,
-generic error messages, encryption at rest, and security event logging.
+The API is hardened against common web threats:
 
-### Input Sanitisation (AC1)
+- **Input sanitisation** — All user strings are HTML-escaped before storage; SQL injection prevented by parameterised queries and enum validation.
+- **Generic error messages** — Global handlers return plain JSON errors. No stack traces or system internals leak to clients (debug mode off by default).
+- **Encryption at rest** — Request descriptions encrypted with Fernet when `HEATSHIELD_ENCRYPTION_KEY` is set; falls back to plain text in dev.
+- **Security event logging** — Failed auth, access denied, and rejected inputs are logged to `security_events.log`.
 
-All user-supplied strings (`description`, `area`, centre names) are
-HTML-escaped before storage using Python's built-in `html.escape()`.
-SQL injection is prevented by SQLAlchemy parameterised queries and
-enum validation on categorical fields.
-
-### Generic Error Messages (AC2)
-
-Global Flask error handlers intercept 400, 404, and 500 responses
-and return plain JSON errors (`{"error": "..."}`). Debug mode is
-disabled by default; set `FLASK_DEBUG=true` to re-enable for local
-development. Internal details (stack traces, file paths, DB schema)
-are never exposed to clients.
-
-### Encryption at Rest (AC3)
-
-When the environment variable `HEATSHIELD_ENCRYPTION_KEY` is set,
-request descriptions are encrypted with Fernet symmetric encryption
-before being written to SQLite and decrypted on read. Without a key
-the system falls back to plain-text storage for development use.
-
-Generate a key:
-
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-### Security Event Logging (AC4)
-
-A new `SecurityAuditLog` model records security-relevant events:
-
-- **AUTH_FAILED** – Missing, malformed, or invalid Bearer tokens
-- **ACCESS_DENIED** – Authenticated user without sufficient permissions
-- **REJECTED_INPUT** – Invalid categories, missing required fields,
-  oversized inputs
-
-Events are written to `security_events.log` with timestamp, event type,
-client IP address, and a brief description.
-
-### Testing
-
-22 new tests cover all four acceptance criteria:
-
-```bash
-python -m pytest tests/test_us19.py -v
-```
-
-Tests verify XSS sanitisation, SQL injection safety, generic error
-messages, encryption round-trips, and security event logging.
+22 new tests cover all four ACs (`python -m pytest tests/test_us19.py`).
