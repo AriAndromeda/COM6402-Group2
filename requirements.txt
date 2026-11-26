@@ -3,3 +3,4 @@ Flask-SQLAlchemy
 pytest
 django
 requests
+cryptography

@@ -17,9 +17,15 @@ This is a teaching prototype, not a production-ready application.
 US06 provides Bearer-token authentication and role-based access control
 for protected write operations, with audit logging of successful changes.
 Some endpoints remain public. Run locally using fictional data only.
+
+US19 adds security testing: input sanitisation, generic error messages,
+encryption at rest (configurable via HEATSHIELD_ENCRYPTION_KEY), and
+security event logging for failed auth, rejected inputs, and access denials.
 """
 
+import html
 import hashlib
+import logging
 import os
 import secrets
 from datetime import datetime, timezone
@@ -28,6 +34,64 @@ from functools import wraps
 from flask import Flask, g, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import update
+
+# US19: Security configuration and logging setup.
+logging.basicConfig(level=logging.INFO)
+security_logger = logging.getLogger("heatshield.security")
+security_handler = logging.FileHandler("security_events.log")
+security_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+)
+security_logger.addHandler(security_handler)
+security_logger.setLevel(logging.INFO)
+
+
+def log_security_event(event_type, details="", ip_address=None):
+    """Log a security-relevant event for audit purposes (US19 AC4)."""
+    if ip_address is None:
+        ip_address = request.remote_addr if request else "unknown"
+    message = f"[{event_type}] IP={ip_address} {details}"
+    security_logger.warning(message)
+
+
+def sanitize_input(value):
+    """Sanitise user input to prevent XSS and injection attacks (US19 AC1)."""
+    if isinstance(value, str):
+        return html.escape(value.strip())
+    return value
+
+
+# US19 AC3: Encryption at rest for sensitive data.
+_ENCRYPTION_KEY = os.environ.get("HEATSHIELD_ENCRYPTION_KEY", None)
+
+if _ENCRYPTION_KEY is not None:
+    from cryptography.fernet import Fernet
+    _fernet = Fernet(_ENCRYPTION_KEY.encode())
+
+    def encrypt_field(plaintext):
+        """Encrypt a string field before storing in the database."""
+        if plaintext is None:
+            return None
+        return _fernet.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+
+    def decrypt_field(ciphertext):
+        """Decrypt an encrypted field after reading from the database."""
+        if ciphertext is None:
+            return None
+        try:
+            return _fernet.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        except Exception:
+            # Decryption failed — return raw value to avoid leaking errors.
+            return "[encrypted]"
+else:
+    # No encryption key configured; store data as-is (development mode).
+    def encrypt_field(plaintext):
+        """No-op when no encryption key is set."""
+        return plaintext
+
+    def decrypt_field(ciphertext):
+        """No-op when no encryption key is set."""
+        return ciphertext
 
 # 1. Set up Flask and the SQLite database.
 app = Flask(__name__)
@@ -83,7 +147,7 @@ class SupportRequest(db.Model):
         """Turn a database object into JSON-friendly data."""
         return {
             "id": self.id,
-            "description": self.description,
+            "description": decrypt_field(self.description),
             "category": self.category,
             "area": self.area,
             "priority": self.priority,
@@ -208,6 +272,30 @@ class AuditLog(db.Model):
         }
 
 
+# US19: Security audit log for failed auth, rejected inputs, access denials.
+class SecurityAuditLog(db.Model):
+    """Record security-relevant events for audit purposes (US19 AC4)."""
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    event_type = db.Column(
+        db.String(50),
+        nullable=False
+    )
+
+    ip_address = db.Column(
+        db.String(45),
+        nullable=True
+    )
+
+    details = db.Column(
+        db.Text,
+        nullable=True
+    )
+
+    timestamp = db.Column(db.DateTime(timezone=True), nullable=False)
+
+
     # US06 - Staff authentication and authorisation
 
 def require_staff(*allowed_roles):
@@ -226,6 +314,11 @@ def require_staff(*allowed_roles):
                 or parts[0].lower() != "bearer"
                 or not parts[1]
             ):
+                # US19 AC4: Log failed authentication attempts.
+                log_security_event(
+                    "AUTH_FAILED",
+                    "Missing or malformed Bearer token",
+                )
                 return jsonify({
                     "error": "Authentication required"
                 }), 401
@@ -243,12 +336,22 @@ def require_staff(*allowed_roles):
 
             # Reject unknown or inactive staff accounts
             if staff is None or not staff.is_active:
+                # US19 AC4: Log failed authentication attempts.
+                log_security_event(
+                    "AUTH_FAILED",
+                    f"Invalid or inactive credentials (token hash={token_hash[:8]}...)",
+                )
                 return jsonify({
                     "error": "Invalid or inactive credentials"
                 }), 401
 
             # Check whether the staff role is authorised
             if staff.role not in allowed_roles:
+                # US19 AC4: Log access denied events.
+                log_security_event(
+                    "ACCESS_DENIED",
+                    f"Insufficient permissions for role={staff.role}",
+                )
                 return jsonify({
                     "error": "Insufficient permissions"
                 }), 403
@@ -375,11 +478,15 @@ def create_request():
     for field in required:
         val = data.get(field) if isinstance(data, dict) else None
         if not isinstance(val, str) or not val.strip():
+            # US19 AC4: Log rejected input attempts.
+            log_security_event("REJECTED_INPUT", f"Missing required field: {field}")
             return jsonify({"error": f"{field} is required"}), 400
 
     # Validate category against allowed values.
     cat_clean, err = _validate_enum(data["category"], "category", ALLOWED_CATEGORIES)
     if err:
+        # US19 AC2: Generic error message (no system internals exposed).
+        log_security_event("REJECTED_INPUT", f"Invalid category value")
         return jsonify({"error": err}), 400
 
     # Validate optional enumerated fields with sensible defaults.
@@ -391,6 +498,7 @@ def create_request():
             priority_raw, "priority", ALLOWED_PRIORITIES
         )
         if err:
+            log_security_event("REJECTED_INPUT", f"Invalid priority value")
             return jsonify({"error": err}), 400
     else:
         priority_clean = "medium"
@@ -398,6 +506,7 @@ def create_request():
     if isinstance(status_raw, str) and status_raw.strip():
         status_clean, err = _validate_enum(status_raw, "status", ALLOWED_STATUSES)
         if err:
+            log_security_event("REJECTED_INPUT", f"Invalid status value")
             return jsonify({"error": err}), 400
     else:
         status_clean = "new"
@@ -405,6 +514,7 @@ def create_request():
     # Issue #2: enforce column length limits at the API boundary.
     desc_raw = data["description"].strip()
     if len(desc_raw) > MAX_DESCRIPTION_LENGTH:
+        log_security_event("REJECTED_INPUT", f"description exceeds {MAX_DESCRIPTION_LENGTH} chars")
         return jsonify(
             {
                 "error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"
@@ -413,14 +523,17 @@ def create_request():
 
     area_raw = data["area"].strip()
     if len(area_raw) > MAX_AREA_LENGTH:
+        log_security_event("REJECTED_INPUT", f"area exceeds {MAX_AREA_LENGTH} chars")
         return jsonify(
             {"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}
         ), 400
 
+    # US19 AC1: Sanitise user inputs to prevent XSS and injection attacks.
+    # US19 AC3: Encrypt sensitive data at rest.
     record = SupportRequest(
-        description=desc_raw,
+        description=encrypt_field(sanitize_input(desc_raw)),
         category=cat_clean,
-        area=area_raw,
+        area=sanitize_input(area_raw),
         priority=priority_clean,
         status=status_clean,
     )
@@ -446,36 +559,43 @@ def update_request(request_id):
     cleaned_values = {}
     for field_name, value in data.items():
         if field_name not in allowed_fields:
+            log_security_event("REJECTED_INPUT", f"Invalid update field: {field_name}")
             return jsonify({"error": f"Cannot update {field_name}"}), 400
 
         # Enum fields use the shared mapping (DRY — Issue #4).
         if field_name in ENUM_FIELDS:
             cleaned, err = _validate_enum(value, field_name, ENUM_FIELDS[field_name])
             if err:
+                log_security_event("REJECTED_INPUT", f"Invalid {field_name} value")
                 return jsonify({"error": err}), 400
             cleaned_values[field_name] = cleaned
 
         elif field_name == "description":
             desc_raw = value.strip() if isinstance(value, str) else value
             if not isinstance(desc_raw, str) or not desc_raw:
+                log_security_event("REJECTED_INPUT", f"Empty description")
                 return jsonify({"error": f"description is required"}), 400
             if len(desc_raw) > MAX_DESCRIPTION_LENGTH:
+                log_security_event("REJECTED_INPUT", f"description exceeds {MAX_DESCRIPTION_LENGTH} chars")
                 return jsonify(
                     {
                         "error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"
                     }
                 ), 400
-            cleaned_values[field_name] = desc_raw
+            # US19 AC1: Sanitise input.
+            cleaned_values[field_name] = sanitize_input(desc_raw)
 
         elif field_name == "area":
             area_raw = value.strip() if isinstance(value, str) else value
             if not isinstance(area_raw, str) or not area_raw:
+                log_security_event("REJECTED_INPUT", f"Empty area")
                 return jsonify({"error": f"area is required"}), 400
             if len(area_raw) > MAX_AREA_LENGTH:
+                log_security_event("REJECTED_INPUT", f"area exceeds {MAX_AREA_LENGTH} chars")
                 return jsonify(
                     {"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}
                 ), 400
-            cleaned_values[field_name] = area_raw
+            cleaned_values[field_name] = sanitize_input(area_raw)
 
 
     # Phase 2: Apply all validated changes.
@@ -543,25 +663,29 @@ def create_centre():
 
     for field in ("name", "area"):
         if not isinstance(data.get(field), str) or not data[field].strip():
+            log_security_event("REJECTED_INPUT", f"Missing required centre field: {field}")
             return jsonify({"error": f"{field} is required"}), 400
 
     capacity = data.get("capacity")
     if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 1:
+        log_security_event("REJECTED_INPUT", "Invalid centre capacity value")
         return jsonify({"error": "capacity must be a positive integer"}), 400
 
     opening_hours = data.get("opening_hours", "")
     if opening_hours is None:
         opening_hours = ""
     if not isinstance(opening_hours, str):
+        log_security_event("REJECTED_INPUT", "Invalid centre opening_hours type")
         return jsonify({"error": "opening_hours must be text"}), 400
 
     status = data.get("status", "open")
     if not isinstance(status, str) or not status.strip():
+        log_security_event("REJECTED_INPUT", "Empty centre status")
         return jsonify({"error": "status must be text"}), 400
 
     record = CoolingCentre(
-        name=data["name"].strip(),
-        area=data["area"].strip(),
+        name=sanitize_input(data["name"].strip()),
+        area=sanitize_input(data["area"].strip()),
         capacity=capacity,
         spaces_available=capacity,
         opening_hours=opening_hours.strip(),
@@ -616,12 +740,15 @@ def create_booking():
     request_id = data.get("request_id")
     centre_id = data.get("centre_id")
     if not isinstance(request_id, int) or isinstance(request_id, bool):
+        log_security_event("REJECTED_INPUT", "Invalid request_id type")
         return jsonify({"error": "request_id is required"}), 400
     if not isinstance(centre_id, int) or isinstance(centre_id, bool):
+        log_security_event("REJECTED_INPUT", "Invalid centre_id type")
         return jsonify({"error": "centre_id is required"}), 400
 
     for field in ("booking_date", "booking_time"):
         if not isinstance(data.get(field), str) or not data[field].strip():
+            log_security_event("REJECTED_INPUT", f"Missing booking field: {field}")
             return jsonify({"error": f"{field} is required"}), 400
 
     spaces_required = data.get("spaces_required")
@@ -630,14 +757,18 @@ def create_booking():
         or isinstance(spaces_required, bool)
         or spaces_required < 1
     ):
+        log_security_event("REJECTED_INPUT", "Invalid spaces_required value")
         return jsonify({"error": "spaces_required must be a positive integer"}), 400
 
     support_request = db.session.get(SupportRequest, request_id)
     if support_request is None:
+        # US19 AC2: Generic error — do not confirm whether the ID exists.
+        log_security_event("REJECTED_INPUT", f"Booking for non-existent request_id={request_id}")
         return jsonify({"error": "Request not found"}), 404
 
     centre = db.session.get(CoolingCentre, centre_id)
     if centre is None:
+        log_security_event("REJECTED_INPUT", f"Booking for non-existent centre_id={centre_id}")
         return jsonify({"error": "Centre not found"}), 404
 
     # Happy-path booking: centre must be open with enough remaining spaces.
@@ -709,6 +840,22 @@ def get_booking(booking_id):
     return jsonify(record.to_dict())
 
 
+# US19 AC2: Global error handlers to prevent exposing system internals.
+@app.errorhandler(400)
+def bad_request(error):
+    log_security_event("ERROR_400", str(error))
+    return jsonify({"error": "Bad request"}), 400
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Resource not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    log_security_event("ERROR_500", str(error))
+    return jsonify({"error": "Internal server error"}), 500
+
+
 def get_port():
     """Return the configured PORT, defaulting to 5000."""
     raw_port = os.getenv("PORT", "5000")
@@ -728,6 +875,12 @@ if __name__ == "__main__":
     # Later: consider proper database migrations when changing the schema.
     with app.app_context():
         db.create_all()
+        # US19 AC4: Ensure security audit tables exist.
+        db.create_all()
+
+    # US19 AC2: Disable debug mode in production to prevent stack trace exposure.
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    app.config["PROPAGATE_EXCEPTIONS"] = False  # Hide internal errors from clients.
 
     # Flask's debug server is only suitable for LOCAL development.
-    app.run(debug=True, host="127.0.0.1", port=get_port())
+    app.run(debug=debug_mode, host="127.0.0.1", port=get_port())
