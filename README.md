@@ -80,7 +80,7 @@ If you prefer to start services individually:
 #### 1. Install dependencies
 
 ```bash
-python -m pip install flask flask-sqlalchemy pytest django requests
+python -m pip install flask flask-sqlalchemy pytest django requests cryptography
 ```
 
 Or use the project's virtual environment (recommended):
@@ -133,17 +133,19 @@ python -m pytest tests/ dashboard/tests.py -v
 |---|---|
 | `tests/test_bookings.py` | Flask API – CRUD, validation, filtering, error handling (82 assertions) |
 | `dashboard/tests.py` | Django dashboard – metric counts, centre utilisation, empty data, API failure handling (7 tests) |
+| `tests/test_us19.py` | Security testing – input sanitisation, generic errors, encryption at rest, security event logging (22 tests) |
 
 Tests use an in-memory SQLite database for the Flask side and mocked HTTP responses for the Django side.
 
 ## Project Structure
 
 ```
-├── app.py                  # Flask API – models, routes, CRUD endpoints
+├── app.py                  # Flask API – models, routes, CRUD endpoints, security (US19)
 ├── manage.py               # Django CLI utility
 ├── start.sh                # Launch script (Flask + Django)
 ├── requirements.txt        # pip dependencies
 ├── db.sqlite3              # Django database (ignored in git)
+│                           # security_events.log – US19 security audit log (not committed)
 │
 ├── dashboard/              # Django app
 │   ├── __init__.py
@@ -169,12 +171,15 @@ Tests use an in-memory SQLite database for the Flask side and mocked HTTP respon
 |---|---|---|
 | `PORT` (Flask) | `5000` | Port for the Flask API server |
 | `DJANGO_FLASK_API_URL` | `http://127.0.0.1:5000/api` | Base URL Django uses to fetch data from Flask |
+| `FLASK_DEBUG` | `false` | Enable debug mode (disables generic error handling when true) |
+| `HEATSHIELD_ENCRYPTION_KEY` | *(none)* | Fernet encryption key for encrypting sensitive fields at rest. When set, request descriptions are encrypted before storage and decrypted on read. Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 
 ## Notes
 
 - **Authentication** – US06 provides Bearer-token authentication and role-based access control for protected Flask API write operations. The Django dashboard itself does not yet enforce user authentication. Dashboard access controls must be implemented before deployment.
 - **Data persistence** – Both services use SQLite databases (`heatshield.db` for Flask, `db.sqlite3` for Django). These are ignored in `.gitignore`.
 - **Port fallback** – If port 5000 is occupied by another application, `start.sh` automatically starts Flask on port 5001 and updates the Django API URL accordingly.
+- **Security (US19)** – All user inputs are HTML-sanitised to prevent XSS attacks. Error messages are generic and never expose system internals or stack traces. Sensitive data can be encrypted at rest via `HEATSHIELD_ENCRYPTION_KEY`. Failed auth attempts, access denials, and rejected inputs are logged to `security_events.log` for audit purposes.
 
 
 ## US06 – Staff Authentication and Access Control
@@ -218,3 +223,60 @@ member, action, affected resource and timestamp.
 
 For implementation details, testing evidence and limitations,
 see `US06_SECURITY_DOCUMENTATION.md`.
+
+
+## US19 – Security Testing
+
+US19 hardens the API against common web threats: input sanitisation,
+generic error messages, encryption at rest, and security event logging.
+
+### Input Sanitisation (AC1)
+
+All user-supplied strings (`description`, `area`, centre names) are
+HTML-escaped before storage using Python's built-in `html.escape()`.
+SQL injection is prevented by SQLAlchemy parameterised queries and
+enum validation on categorical fields.
+
+### Generic Error Messages (AC2)
+
+Global Flask error handlers intercept 400, 404, and 500 responses
+and return plain JSON errors (`{"error": "..."}`). Debug mode is
+disabled by default; set `FLASK_DEBUG=true` to re-enable for local
+development. Internal details (stack traces, file paths, DB schema)
+are never exposed to clients.
+
+### Encryption at Rest (AC3)
+
+When the environment variable `HEATSHIELD_ENCRYPTION_KEY` is set,
+request descriptions are encrypted with Fernet symmetric encryption
+before being written to SQLite and decrypted on read. Without a key
+the system falls back to plain-text storage for development use.
+
+Generate a key:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### Security Event Logging (AC4)
+
+A new `SecurityAuditLog` model records security-relevant events:
+
+- **AUTH_FAILED** – Missing, malformed, or invalid Bearer tokens
+- **ACCESS_DENIED** – Authenticated user without sufficient permissions
+- **REJECTED_INPUT** – Invalid categories, missing required fields,
+  oversized inputs
+
+Events are written to `security_events.log` with timestamp, event type,
+client IP address, and a brief description.
+
+### Testing
+
+22 new tests cover all four acceptance criteria:
+
+```bash
+python -m pytest tests/test_us19.py -v
+```
+
+Tests verify XSS sanitisation, SQL injection safety, generic error
+messages, encryption round-trips, and security event logging.
