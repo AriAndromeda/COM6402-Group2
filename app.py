@@ -47,11 +47,29 @@ security_logger.setLevel(logging.INFO)
 
 
 def log_security_event(event_type, details="", ip_address=None):
-    """Log a security-relevant event for audit purposes (US19 AC4)."""
+    """Log a security-relevant event for audit purposes (US19 AC4).
+
+    Writes to the file logger AND persists a row in SecurityAuditLog so that
+    both mechanisms are available at rest.
+    """
     if ip_address is None:
         ip_address = request.remote_addr if request else "unknown"
     message = f"[{event_type}] IP={ip_address} {details}"
     security_logger.warning(message)
+
+    # Persist to the database audit table so rows survive a log-rotation.
+    try:
+        row = SecurityAuditLog(
+            event_type=event_type,
+            ip_address=ip_address,
+            details=details,
+            timestamp=datetime.now(timezone.utc),
+        )
+        db.session.add(row)
+        db.session.commit()
+    except Exception:
+        # If the DB is unavailable fall back to file-only logging.
+        db.session.rollback()
 
 
 def sanitize_input(value):
@@ -365,6 +383,13 @@ def require_staff(*allowed_roles):
 
     return decorator
 
+
+# US19 AC2/AC4: Supervisor-only access for sensitive operations.
+def require_supervisor(view_function):
+    """Restrict an endpoint to supervisor role only (US19 AC2/AC4)."""
+    return require_staff("supervisor")(view_function)
+
+
 def generate_staff_token():
     """Generate a cryptographically secure staff access token."""
     return secrets.token_urlsafe(32)
@@ -582,8 +607,8 @@ def update_request(request_id):
                         "error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"
                     }
                 ), 400
-            # US19 AC1: Sanitise input.
-            cleaned_values[field_name] = sanitize_input(desc_raw)
+            # US19 AC1: Sanitise input.  AC3: encrypt before storing.
+            cleaned_values[field_name] = encrypt_field(sanitize_input(desc_raw))
 
         elif field_name == "area":
             area_raw = value.strip() if isinstance(value, str) else value
@@ -838,6 +863,16 @@ def get_booking(booking_id):
     if record is None:
         return jsonify({"error": "Booking not found"}), 404
     return jsonify(record.to_dict())
+
+
+# US19 AC2/AC4: Supervisor-only endpoint for testing role-based access control.
+@app.delete("/api/supervisor/purge")
+@require_supervisor
+def supervisor_purge():
+    """Delete all support requests — supervisor only (US19 AC2/AC4)."""
+    db.session.query(SupportRequest).delete()
+    db.session.commit()
+    return "", 204
 
 
 # US19 AC2: Global error handlers to prevent exposing system internals.
