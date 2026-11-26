@@ -189,6 +189,22 @@ class TestUs07bSearchableQueue:
         assert b'name="q"' in response.content
 
     @patch("dashboard.views._get_json")
+    def test_unfiltered_queue_reuses_full_request_list(self, mock_get):
+        """Avoid a second /requests fetch when no Flask filters are set."""
+        mock_get.side_effect = [
+            self.sample_requests,  # metrics + queue
+            [],  # centres
+        ]
+
+        response = index(self.factory.get("/", data={"q": "water"}))
+
+        assert response.status_code == 200
+        paths = [call.args[0] for call in mock_get.call_args_list]
+        assert paths.count("/requests") == 1
+        assert not any("?" in path for path in paths if path.startswith("/requests"))
+        assert b"Urgent water assistance" in response.content
+
+    @patch("dashboard.views._get_json")
     def test_status_priority_area_filters_call_flask_api(self, mock_get):
         """Filters are forwarded to GET /api/requests as query params."""
         mock_get.return_value = [self.sample_requests[0]]

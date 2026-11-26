@@ -77,16 +77,27 @@ def index(request):
 
     # Metrics stay based on the full queue (US07a behaviour).
     all_requests = _get_json("/requests")
+    if not isinstance(all_requests, list):
+        all_requests = []
 
-    # Queue list uses Flask filters, then optional description search.
-    queue_path = _requests_path(status=status, priority=priority, area=area)
-    requests_data = _get_json(queue_path)
-    if not isinstance(requests_data, list):
-        requests_data = []
+    # Queue: reuse the full list when no Flask filters are set (avoid a second fetch).
+    api_filters = any(
+        isinstance(value, str) and value.strip()
+        for value in (status, priority, area)
+    )
+    if api_filters:
+        queue_path = _requests_path(status=status, priority=priority, area=area)
+        requests_data = _get_json(queue_path)
+        if not isinstance(requests_data, list):
+            requests_data = []
+    else:
+        requests_data = list(all_requests)
+
+    # Optional free-text search is applied in-process after the API result.
     requests_data = _apply_search(requests_data, search_query)
 
     # Count requests by status (from full dataset).
-    total_requests = len(all_requests) if isinstance(all_requests, list) else 0
+    total_requests = len(all_requests)
     new_count = sum(1 for r in all_requests if r.get("status") == "new")
     in_progress_count = sum(
         1 for r in all_requests if r.get("status") == "in progress"
