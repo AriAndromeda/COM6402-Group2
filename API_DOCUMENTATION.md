@@ -243,7 +243,53 @@ This confirms that the Flask application responds.
 It does not verify database connectivity,
 database integrity or external service availability.
 
-## 10. Running Automated Tests
+## 10. LLM Adapter (US13 – Sprint 1 attempt)
+
+Configurable adapter for mock or OpenAI-compatible providers.
+Credentials are read from environment variables and are never
+returned in API responses.
+
+Environment variables:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| HEATSHIELD_LLM_PROVIDER | `mock` or `openai` | `mock` |
+| HEATSHIELD_LLM_API_KEY | Provider API key (keep secret) | empty |
+| HEATSHIELD_LLM_MODEL | Model name for live provider | `gpt-4o-mini` |
+| HEATSHIELD_LLM_BASE_URL | OpenAI-compatible base URL | `https://api.openai.com/v1` |
+
+### Status
+
+Endpoint: GET /api/llm/status
+
+Successful response (200 OK):
+
+```json
+{
+  "provider": "mock",
+  "model": "mock",
+  "configured": true,
+  "mode": "mock"
+}
+```
+
+### Generate
+
+Endpoint: POST /api/llm/generate
+
+Required JSON field: `prompt`
+
+Example:
+
+```json
+{ "prompt": "What advice should staff give during a heatwave?" }
+```
+
+Successful response (200 OK) returns `provider`, `mode`, `model`
+and `text`. On rate limits or provider errors the adapter falls
+back to mock mode and may include `fallback_reason`.
+
+## 11. Running Automated Tests
 
 Install dependencies:
 
@@ -257,12 +303,17 @@ Run US05 tests only:
 
 python -m pytest tests/test_us05.py -v
 
-## 11. Limitations
+Run US13 tests only:
+
+python -m pytest tests/test_us13.py -v
+
+## 12. Limitations
 
 This is a local development API.
 
-Authentication and authorisation are not yet implemented.
 Only fictional information should be used.
+The LLM adapter defaults to mock mode for local demos;
+live providers require a secret API key in the environment.
 
 Further validation, integration and security testing
 will be required before production deployment.

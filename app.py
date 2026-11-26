@@ -29,6 +29,8 @@ from flask import Flask, g, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import update
 
+from llm_adapter import get_adapter
+
 # 1. Set up Flask and the SQLite database.
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///heatshield.db"
@@ -707,6 +709,32 @@ def get_booking(booking_id):
     if record is None:
         return jsonify({"error": "Booking not found"}), 404
     return jsonify(record.to_dict())
+
+
+# US13 – LLM adapter status and generate (Sprint 1 attempt).
+@app.get("/api/llm/status")
+def llm_status():
+    """Return non-secret LLM adapter configuration."""
+    return jsonify(get_adapter().public_status())
+
+
+@app.post("/api/llm/generate")
+def llm_generate():
+    """Generate advice text via the configured LLM adapter.
+
+    Defaults to mock mode. Live providers read HEATSHIELD_LLM_* env vars.
+    Credentials are never included in the JSON response.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send a JSON object"}), 400
+
+    prompt = data.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return jsonify({"error": "prompt is required"}), 400
+
+    result = get_adapter().generate(prompt.strip())
+    return jsonify(result)
 
 
 def get_port():
