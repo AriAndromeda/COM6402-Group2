@@ -98,6 +98,7 @@ CENTRES = [
     {"name": "Oldham Community Hub",        "area": "Oldham",       "capacity": 35, "spaces_available": 10, "opening_hours": "Tue-Sat 10am-6pm",    "status": "open"},
     {"name": "Salford Sports Centre",       "area": "Salford",      "capacity": 45, "spaces_available": 45, "opening_hours": "Daily 6am-11pm",      "status": "open"},
     {"name": "Altrinchall Memorial Hall",   "area": "Altrincham",   "capacity": 20, "spaces_available": 20, "opening_hours": "Mon-Fri 9am-5pm",     "status": "closed"},
+    {"name": "Bury Community Centre",       "area": "Bury",         "capacity": 30, "spaces_available": 0,  "opening_hours": "Daily 6am-12am",      "status": "open"},
 ]
 
 REQUESTS = [

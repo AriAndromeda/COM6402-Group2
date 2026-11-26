@@ -42,6 +42,16 @@
             background: rgba(255,255,255,0.35);
         }
 
+        .refresh-btn:focus-visible {
+            outline: 2px solid #fff;
+            outline-offset: 2px;
+        }
+
+        /* Focus indicator for metric cards */
+        .metric-card:focus-within {
+            box-shadow: 0 0 0 3px rgba(43,108,176,0.5);
+        }
+
         .container {
             max-width: 1100px;
             margin: 2rem auto;
@@ -73,7 +83,7 @@
         .metric-card .label {
             margin-top: 0.3rem;
             font-size: 0.9rem;
-            color: #718096;
+            color: #4a5568;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -136,22 +146,32 @@
 
         /* ---- Capacity bar ---- */
         .capacity-bar {
-            width: 100%;
-            height: 8px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             background: #e2e8f0;
             border-radius: 4px;
-            overflow: hidden;
+            padding: 2px 6px;
         }
 
         .capacity-fill {
-            height: 100%;
+            height: 8px;
             border-radius: 4px;
             transition: width 0.3s ease;
+            min-width: 16px;
         }
 
-        .fill-high   { background: #38a169; }
-        .fill-medium { background: #dd6b20; }
-        .fill-low    { background: #e53e3d; }
+        .fill-high   { background: #e53e3d; }  /* high utilisation — red */
+        .fill-medium { background: #dd6b20; }  /* medium — orange */
+        .fill-low    { background: #38a169; }  /* low utilisation — green */
+
+        .capacity-pct {
+            font-size: 0.85rem;
+            color: #4a5568;
+            white-space: nowrap;
+            min-width: 2.5ch;
+            text-align: right;
+        }
 
         /* ---- Summary row ---- */
         .summary-row td {
@@ -162,46 +182,233 @@
         footer {
             text-align: center;
             padding: 1.5rem;
-            color: #a0aec0;
+            color: #64748b;
             font-size: 0.85rem;
+        }
+
+        /* ===== Accessibility fixes ===== */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #2b6cb0;
+            color: white;
+            padding: 0.5rem 1rem;
+            z-index: 1000;
+            font-size: 0.9rem;
+            text-decoration: none;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Screen reader only - visually hidden but accessible */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* ===== Responsive breakpoints ===== */
+
+        /* Tablet (≤768px) */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+                padding: 1rem 1.25rem;
+            }
+
+            header h1 { font-size: 1.3rem; }
+            header p   { font-size: 0.85rem; }
+
+            .refresh-btn {
+                align-self: flex-end;
+                margin-top: 0.25rem;
+            }
+
+            .container { padding: 0 1rem; }
+
+            /* Metric cards: keep grid but tighten gap */
+            .metrics { gap: 1rem; }
+
+            .metric-card { padding: 1.2rem; }
+            .metric-card .value { font-size: 1.8rem; }
+
+            h2 { font-size: 1.1rem; }
+
+            /* Table headers wrap, cells shrink */
+            thead th {
+                font-size: 0.75rem;
+                padding: 0.65rem 0.7rem;
+            }
+
+            tbody td {
+                padding: 0.65rem 0.7rem;
+                font-size: 0.85rem;
+            }
+
+            .badge { font-size: 0.75rem; padding: 0.15rem 0.45rem; }
+
+            footer { padding: 1rem; font-size: 0.8rem; }
+        }
+
+        /* Phone (≤480px) */
+        @media (max-width: 480px) {
+            header h1 { font-size: 1.15rem; }
+            header p   { display: none; }
+
+            .container { margin: 1rem auto; padding: 0 0.75rem; }
+
+            /* Metric cards: 2-col grid */
+            .metrics {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.75rem;
+            }
+
+            .metric-card { padding: 1rem; border-radius: 8px; }
+            .metric-card .value { font-size: 1.5rem; }
+            .metric-card .label   { font-size: 0.75rem; }
+
+            h2 { font-size: 1rem; margin-bottom: 0.75rem; }
+
+            /* Card-style table rows */
+            table, thead, tbody, th, td, tr { display: block; }
+
+            thead th {
+                display: none;               /* hide header row */
+            }
+
+            tbody tr {
+                margin-bottom: 1rem;
+                border-radius: 8px;
+                padding: 0.75rem;
+                background: white;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            }
+
+            tbody tr:hover { background: white; }
+
+            /* Each cell becomes a labelled row */
+            tbody td {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                padding: 0.35rem 0;
+                border-bottom: 1px solid #edf2f7;
+                font-size: 0.85rem;
+            }
+
+            tbody td:last-child { border-bottom: none; }
+
+            /* Add label via data attribute */
+            tbody td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: #4a5568;
+                text-transform: uppercase;
+                font-size: 0.7rem;
+                letter-spacing: 0.3px;
+            }
+
+            /* Badge stays inline */
+            tbody td .badge {
+                white-space: nowrap;
+            }
+
+            /* Capacity bar stacks vertically, percentage below */
+            tbody td .capacity-bar { margin-bottom: 0.25rem; }
+
+            tbody td .capacity-fill { height: 6px; }
+
+            tbody td span[style*="font-size"] {
+                display: block;
+                text-align: right;
+                width: 100%;
+                margin-top: 0.15rem;
+            }
+
+            /* Summary row — hide on mobile (totals visible in metric cards) */
+            .summary-row { display: none; }
+
+            /* Centre availability table — same card treatment */
+            #centres-table tbody tr {
+                margin-bottom: 1rem;
+            }
+
+            /* Prevent tables from collapsing too narrow */
+            .table-wrapper { min-width: 280px; }
+
+            footer { padding: 0.75rem; font-size: 0.75rem; }
+        }
+
+        /* Small phone (≤375px, e.g. iPhone SE) */
+        @media (max-width: 375px) {
+            header h1 { font-size: 1rem; }
+
+            .metrics { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+
+            .metric-card { padding: 0.8rem; border-radius: 6px; }
+            .metric-card .value { font-size: 1.3rem; }
+            .metric-card .label   { font-size: 0.7rem; }
+
+            h2 { font-size: 0.95rem; }
+
+            tbody td { font-size: 0.8rem; padding: 0.3rem 0; }
+            tbody td::before { font-size: 0.65rem; }
+
+            .badge { font-size: 0.7rem; padding: 0.1rem 0.35rem; }
+
+            footer { padding: 0.5rem; font-size: 0.7rem; }
         }
     </style>
 </head>
 <body>
 
-<header>
+<!-- Skip link for keyboard users -->
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
+<header role="banner">
     <div>
-        <h1>&#x1F3E1; Heat Shield – Staff Dashboard</h1>
-        <p>Workload overview &amp; cooling-centre availability at a glance</p>
+        <h1>Heat Shield – Staff Dashboard</h1>
+        <p>Current requests and centre capacity</p>
     </div>
-    <a href="{{ request.path }}" class="refresh-btn">&#x21BB; Refresh</a>
+    <button type="button" class="refresh-btn" onclick="location.reload()" aria-label="Refresh dashboard data">&#x21BB; Refresh</button>
 </header>
 
-<div class="container">
+<main id="main-content" class="container">
 
     <!-- ====== REQUEST METRICS ====== -->
-    <div class="metrics">
-        <div class="metric-card">
-            <div class="value">{{ total_requests }}</div>
-            <div class="label">Total Requests</div>
+    <div class="metrics" role="group" aria-label="Request metrics summary">
+        <div class="metric-card" role="region" aria-label="Total Requests: {{ total_requests }}">
+            <span class="value" aria-hidden="true">{{ total_requests }}</span>
+            <span class="label">Total Requests</span>
         </div>
-        <div class="metric-card outstanding">
-            <div class="value">{{ outstanding_count }}</div>
-            <div class="label">Outstanding</div>
+        <div class="metric-card outstanding" role="region" aria-label="Outstanding requests: {{ outstanding_count }}">
+            <span class="value" aria-hidden="true">{{ outstanding_count }}</span>
+            <span class="label">Outstanding</span>
         </div>
-        <div class="metric-card">
-            <div class="value">{{ completed_count }}</div>
-            <div class="label">Completed</div>
+        <div class="metric-card" role="region" aria-label="Completed requests: {{ completed_count }}">
+            <span class="value" aria-hidden="true">{{ completed_count }}</span>
+            <span class="label">Completed</span>
         </div>
-        <div class="metric-card">
-            <div class="value">{{ in_progress_count }}</div>
-            <div class="label">In Progress</div>
+        <div class="metric-card" role="region" aria-label="In Progress requests: {{ in_progress_count }}">
+            <span class="value" aria-hidden="true">{{ in_progress_count }}</span>
+            <span class="label">In Progress</span>
         </div>
     </div>
 
     <!-- ====== BREAKDOWN TABLE ====== -->
-    <h2>Support Request Breakdown</h2>
-    <table>
+    <h2>Requests</h2>
+    <table id="requests-table">
         <thead>
             <tr>
                 <th>ID</th>
@@ -215,18 +422,18 @@
         <tbody>
             {% for r in requests_data %}
             <tr>
-                <td>{{ r.id }}</td>
-                <td>{{ r.description }}</td>
-                <td>{{ r.category }}</td>
-                <td>{{ r.area }}</td>
-                <td>{{ r.priority|capfirst }}</td>
-                <td>
+                <td data-label="ID">{{ r.id }}</td>
+                <td data-label="Description">{{ r.description }}</td>
+                <td data-label="Category">{{ r.category }}</td>
+                <td data-label="Area">{{ r.area }}</td>
+                <td data-label="Priority">{{ r.priority|capfirst }}</td>
+                <td data-label="Status">
                     {% if r.status == "new" %}
-                        <span class="badge badge-new">{{ r.status }}</span>
+                        <span class="badge badge-new" role="status" aria-label="Status: new">{{ r.status }}</span>
                     {% elif r.status == "in progress" %}
-                        <span class="badge badge-progress">{{ r.status }}</span>
+                        <span class="badge badge-progress" role="status" aria-label="Status: in progress">{{ r.status }}</span>
                     {% else %}
-                        <span class="badge badge-open">{{ r.status }}</span>
+                        <span class="badge badge-open" role="status" aria-label="Status: {{ r.status }}">{{ r.status }}</span>
                     {% endif %}
                 </td>
             </tr>
@@ -237,41 +444,41 @@
     </table>
 
     <!-- ====== CENTRE AVAILABILITY ====== -->
-    <h2>Cooling Centre Availability</h2>
+    <h2>Centres</h2>
     <div class="table-wrapper">
-        <table>
+        <table id="centres-table">
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Area</th>
-                    <th>Status</th>
-                    <th>Opening Hours</th>
-                    <th>Total Capacity</th>
-                    <th>Spaces Available</th>
-                    <th>Utilisation</th>
+                    <th id="th-name">Name</th>
+                    <th id="th-area">Area</th>
+                    <th id="th-status">Status</th>
+                    <th id="th-hours">Opening Hours</th>
+                    <th id="th-capacity">Total Capacity</th>
+                    <th id="th-available">Spaces Available</th>
+                    <th id="th-utilisation">Utilisation</th>
                 </tr>
             </thead>
             <tbody>
                 {% for c in centres %}
                 <tr>
-                    <td>{{ c.name }}</td>
-                    <td>{{ c.area }}</td>
-                    <td>
+                    <td data-label="Centre">{{ c.name }}</td>
+                    <td data-label="Area">{{ c.area }}</td>
+                    <td data-label="Status">
                         {% if c.status == "open" %}
-                            <span class="badge badge-open">{{ c.status }}</span>
+                            <span class="badge badge-open" role="status" aria-label="Centre status: open">{{ c.status }}</span>
                         {% else %}
-                            <span class="badge badge-closed">{{ c.status }}</span>
+                            <span class="badge badge-closed" role="status" aria-label="Centre status: closed">{{ c.status }}</span>
                         {% endif %}
                     </td>
-                    <td>{{ c.opening_hours }}</td>
-                    <td>{{ c.capacity }}</td>
-                    <td>{{ c.spaces_available }}</td>
-                    <td>
-                        <div class="capacity-bar">
-                            <div class="capacity-fill {% if c.utilisation_pct >= 75 %}fill-low{% elif c.utilisation_pct >= 40 %}fill-medium{% else %}fill-high{% endif %}"
-                                 style="width: {{ c.utilisation_pct }}%"></div>
+                    <td data-label="Hours">{{ c.opening_hours }}</td>
+                    <td data-label="Capacity">{{ c.capacity }}</td>
+                    <td data-label="Available">{{ c.spaces_available }}</td>
+                    <td data-label="Utilisation">
+                        <div class="capacity-bar" role="progressbar" aria-valuenow="{{ c.utilisation_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Utilisation: {{ c.utilisation_pct }}%">
+                            <div class="capacity-fill {% if c.utilisation_pct >= 75 %}fill-high{% elif c.utilisation_pct >= 40 %}fill-medium{% else %}fill-low{% endif %}"
+                                 style="width: calc({{ c.utilisation_pct }}% - 2.5ch)" aria-hidden="true"></div>
+                            <span class="capacity-pct" aria-hidden="true">{{ c.utilisation_pct }}</span>
                         </div>
-                        <span style="font-size:0.8rem; color:#718096;">{{ c.utilisation_pct }}%</span>
                     </td>
                 </tr>
                 {% empty %}
@@ -280,18 +487,18 @@
 
                 <!-- Summary row -->
                 <tr class="summary-row">
-                    <td colspan="4"><strong>Total</strong></td>
-                    <td>{{ total_capacity }}</td>
-                    <td>{{ total_available }}</td>
-                    <td>{{ overall_utilisation_pct }}%</td>
+                    <td colspan="4" headers="th-name th-area th-status th-hours"><strong>Total</strong></td>
+                    <td headers="th-capacity">{{ total_capacity }}</td>
+                    <td headers="th-available">{{ total_available }}</td>
+                    <td headers="th-utilisation">{{ overall_utilisation_pct }}%</td>
                 </tr>
             </tbody>
         </table>
     </div>
 
-</div>
+</main>
 
-<footer>Heat Shield &middot; Dashboard generated at runtime from live API data</footer>
+<footer>Data refreshes automatically — last updated {{ now }}</footer>
 
 </body>
 </html>
