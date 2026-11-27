@@ -1,3 +1,4 @@
+[![codecov](https://codecov.io/gh/AriAndromeda/COM6402-Group2/branch/main/graph/badge.svg?token=RQ4IYSLJM8)](https://codecov.io/gh/AriAndromeda/COM6402-Group2)
 # Heat Shield – COM6402 Group 2
 
 A staff dashboard for managing cooling-centre support requests. The application consists of a **Flask REST API** that serves data and a **Django web dashboard** that displays live metrics to staff.
