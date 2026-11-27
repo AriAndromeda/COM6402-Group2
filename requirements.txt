@@ -2,5 +2,7 @@ Flask
 Flask-SQLAlchemy
 pytest
 pytest-django==4.14.0
+pytest-cov
 django
 requests
+cryptography
