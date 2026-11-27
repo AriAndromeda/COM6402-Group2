@@ -543,7 +543,13 @@
         <tbody>
             {% for r in requests_data %}
             <tr>
-                <td data-label="ID">{{ r.id }}</td>
+
+                <td data-label="ID">
+                    <a href="{% url 'dashboard:request_detail' r.id %}"
+                        aria-label="View details for request {{ r.id }}">
+                        {{ r.id }}
+                    </a>
+                </td>
                 <td data-label="Description">{{ r.description }}</td>
                 <td data-label="Category">{{ r.category }}</td>
                 <td data-label="Area">{{ r.area }}</td>

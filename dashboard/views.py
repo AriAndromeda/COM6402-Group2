@@ -8,12 +8,12 @@ from urllib.parse import urlencode
 import requests
 from django.conf import settings
 from django.http import Http404
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import redirect, render
 
 logger = logging.getLogger(__name__)
+ALLOWED_REQUEST_STATUSES = ("new", "in progress", "completed")
 
 # Base URL for the Flask backend API (readable via DJANGO_FLASK_API_URL env var).
 API_BASE = os.environ.get(
@@ -62,12 +62,7 @@ def _apply_search(requests_data, query):
 
 @login_required
 def index(request):
-    """Render the staff dashboard with request metrics and centre availability.
-
-    .. note::
-       Authentication is not implemented yet (see US08). Anyone who can reach
-       this URL sees all support-request data. Add auth before any deployment.
-    """
+    """Render the searchable Heat Shield dashboard for authorised staff."""
     if not request.user.groups.filter(
         name="Heat Shield Staff"
     ).exists():
@@ -192,9 +187,7 @@ def get_staff_api_token(user):
 def update_request_status(user, request_id, new_status):
     """Update a support request through the authenticated Flask API."""
 
-    allowed_statuses = ("new", "in progress", "completed")
-
-    if new_status not in allowed_statuses:
+    if new_status not in ALLOWED_REQUEST_STATUSES:
         return False, "Invalid request status."
 
     token = get_staff_api_token(user)
@@ -266,11 +259,7 @@ def request_detail(request, request_id):
 
     context = {
         "support_request": support_request,
-        "allowed_statuses": (
-            "new",
-            "in progress",
-            "completed",
-        ),
+        "allowed_statuses": ALLOWED_REQUEST_STATUSES,
         "error_message": error_message,
     }
 

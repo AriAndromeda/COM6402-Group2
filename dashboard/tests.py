@@ -1,7 +1,6 @@
 """Tests for the US07a staff dashboard – metrics and availability calculations."""
 
 from unittest.mock import patch
-from django.http import request
 from django.test import RequestFactory
 from dashboard.views import index
 from unittest.mock import Mock, patch
@@ -12,11 +11,6 @@ from django.test import TestCase
 from django.urls import reverse
 
 from unittest.mock import patch as mock_patch
-
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
-from django.test import TestCase
-
 from dashboard.views import get_staff_api_token
 
 class TestDashboardMetrics:
@@ -362,6 +356,35 @@ class US07cRequestDetailTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+    @patch("dashboard.views._get_json")
+    def test_dashboard_links_to_request_details(self, mock_get):
+        """Staff can navigate from the queue to request details."""
+        self.user.groups.add(self.group)
+        self.client.force_login(self.user)
+
+        def mock_api(path):
+            if path == "/requests":
+                return [{
+                    "id": 1,
+                    "description": "Test support request",
+                    "category": "welfare",
+                    "area": "Bolton",
+                    "priority": "high",
+                    "status": "new",
+                }]
+            return []
+
+        mock_get.side_effect = mock_api
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            'href="/requests/1/"',
+        )
+
+
 class US07cAPIIntegrationTests(TestCase):
     """Verify the Django-to-Flask status-update integration."""
 
@@ -436,83 +459,6 @@ class US07cAPIIntegrationTests(TestCase):
 
         self.assertFalse(success)
         self.assertIn("not authorised", message)
-
-
-class US07cAPIIntegrationTests(TestCase):
-    """Verify the Django-to-Flask status-update integration."""
-
-    def setUp(self):
-        self.user = get_user_model().objects.create_user(
-            username="heatshield_staff",
-            password="TestPassword123!",
-        )
-        group = Group.objects.create(name="Heat Shield Staff")
-        self.user.groups.add(group)
-
-    @patch("dashboard.views.requests.patch")
-    @patch("dashboard.views.get_staff_api_token")
-    def test_valid_update_calls_authenticated_flask_api(
-        self, mock_token, mock_patch
-    ):
-        mock_token.return_value = "test-token-only"
-        mock_patch.return_value.status_code = 200
-
-        from dashboard.views import update_request_status
-
-        success, message = update_request_status(
-            self.user, 1, "completed"
-        )
-
-        self.assertTrue(success)
-        self.assertEqual(
-            message,
-            "Request status updated successfully.",
-        )
-
-        mock_patch.assert_called_once()
-
-        arguments = mock_patch.call_args
-        self.assertTrue(
-            arguments.args[0].endswith("/requests/1")
-        )
-        self.assertEqual(
-            arguments.kwargs["json"],
-            {"status": "completed"},
-        )
-        self.assertEqual(
-            arguments.kwargs["headers"]["Authorization"],
-            "Bearer test-token-only",
-        )
-
-    @patch("dashboard.views.requests.patch")
-    def test_invalid_status_never_reaches_flask(self, mock_patch):
-        from dashboard.views import update_request_status
-
-        success, message = update_request_status(
-            self.user, 1, "invalid-status"
-        )
-
-        self.assertFalse(success)
-        self.assertEqual(message, "Invalid request status.")
-        mock_patch.assert_not_called()
-
-    @patch("dashboard.views.requests.patch")
-    @patch("dashboard.views.get_staff_api_token")
-    def test_flask_rejects_unauthorised_update(
-        self, mock_token, mock_patch
-    ):
-        mock_token.return_value = "test-token-only"
-        mock_patch.return_value.status_code = 403
-
-        from dashboard.views import update_request_status
-
-        success, message = update_request_status(
-            self.user, 1, "completed"
-        )
-
-        self.assertFalse(success)
-        self.assertIn("not authorised", message)
-
 class US07cCredentialSecurityTests(TestCase):
     """Verify staff API credential resolution and access restrictions."""
 
