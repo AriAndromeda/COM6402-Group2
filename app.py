@@ -73,9 +73,25 @@ def log_security_event(event_type, details="", ip_address=None):
 
 
 def sanitize_input(value):
-    """Sanitise user input to prevent XSS and injection attacks (US19 AC1)."""
+    """Sanitise user input for XSS/injection prevention (US19 AC1).
+
+    Returns a cleaned copy; does NOT HTML-escape — that happens at output time
+    via contextual encoding in model ``to_dict()``, avoiding double-encoding.
+    """
     if isinstance(value, str):
-        return html.escape(value.strip())
+        return value.strip()
+    return value
+
+
+def encode_for_output(value):
+    """Contextual HTML-encoding for safe display (US19 AC1).
+
+    Applied at output time so the original data is preserved in storage and
+    only encoded when rendered — prevents double-encoding and preserves
+    legitimate characters such as parentheses, quotes, and angle brackets.
+    """
+    if isinstance(value, str):
+        return html.escape(value)
     return value
 
 
@@ -163,11 +179,13 @@ class SupportRequest(db.Model):
 
     def to_dict(self):
         """Turn a database object into JSON-friendly data."""
+        # Decrypt first (if encryption is enabled), then encode for safe display.
+        raw_description = decrypt_field(self.description)
         return {
             "id": self.id,
-            "description": decrypt_field(self.description),
+            "description": encode_for_output(raw_description),
             "category": self.category,
-            "area": self.area,
+            "area": encode_for_output(self.area),
             "priority": self.priority,
             "status": self.status,
             "created_at": str(self.created_at),
@@ -187,8 +205,8 @@ class CoolingCentre(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
-            "name": self.name,
-            "area": self.area,
+            "name": encode_for_output(self.name),
+            "area": encode_for_output(self.area),
             "capacity": self.capacity,
             "spaces_available": self.spaces_available,
             "opening_hours": self.opening_hours,
@@ -553,10 +571,10 @@ def create_request():
             {"error": f"area must be {MAX_AREA_LENGTH} characters or fewer"}
         ), 400
 
-    # US19 AC1: Sanitise user inputs to prevent XSS and injection attacks.
-    # US19 AC3: Encrypt sensitive data at rest.
+    # US19 AC3: Encrypt sensitive data at rest (encrypt raw value first).
+    # US19 AC1: Contextual output encoding applied in to_dict() — no pre-escaping.
     record = SupportRequest(
-        description=encrypt_field(sanitize_input(desc_raw)),
+        description=encrypt_field(desc_raw),
         category=cat_clean,
         area=sanitize_input(area_raw),
         priority=priority_clean,
@@ -607,8 +625,9 @@ def update_request(request_id):
                         "error": f"description must be {MAX_DESCRIPTION_LENGTH} characters or fewer"
                     }
                 ), 400
-            # US19 AC1: Sanitise input.  AC3: encrypt before storing.
-            cleaned_values[field_name] = encrypt_field(sanitize_input(desc_raw))
+            # US19 AC3: Encrypt raw value before storing.
+            # US19 AC1: Contextual output encoding applied in to_dict().
+            cleaned_values[field_name] = encrypt_field(desc_raw)
 
         elif field_name == "area":
             area_raw = value.strip() if isinstance(value, str) else value
