@@ -35,6 +35,8 @@ from flask import Flask, g, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import update
 
+from llm_adapter import get_adapter
+
 # US19: Security configuration and logging setup.
 logging.basicConfig(level=logging.INFO)
 security_logger = logging.getLogger("heatshield.security")
@@ -142,6 +144,8 @@ ALLOWED_CATEGORIES = ("welfare", "cooling", "practical-assistance", "medical")
 # Field length limits (mirrors model columns for client-side validation).
 MAX_DESCRIPTION_LENGTH = 500
 MAX_AREA_LENGTH = 80
+# US13: keep LLM prompts bounded (fictional case text only).
+MAX_LLM_PROMPT_LENGTH = 2000
 
 # Mapping of enum fields to their allowed values — single source of truth.
 ENUM_FIELDS = {
@@ -882,6 +886,42 @@ def get_booking(booking_id):
     if record is None:
         return jsonify({"error": "Booking not found"}), 404
     return jsonify(record.to_dict())
+
+
+# US13 – LLM adapter status and generate (Sprint 1 attempt).
+@app.get("/api/llm/status")
+def llm_status():
+    """Return non-secret LLM adapter configuration."""
+    return jsonify(get_adapter().public_status())
+
+
+@app.post("/api/llm/generate")
+@require_staff("staff", "supervisor")
+def llm_generate():
+    """Generate advice text via the configured LLM adapter.
+
+    Staff-only. Defaults to mock mode. Live providers read HEATSHIELD_LLM_*
+    env vars. Credentials are never included in the JSON response.
+    Only fictional case text should be sent to external providers.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send a JSON object"}), 400
+
+    prompt = data.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return jsonify({"error": "prompt is required"}), 400
+
+    cleaned = prompt.strip()
+    if len(cleaned) > MAX_LLM_PROMPT_LENGTH:
+        return jsonify({
+            "error": (
+                f"prompt must be {MAX_LLM_PROMPT_LENGTH} characters or fewer"
+            )
+        }), 400
+
+    result = get_adapter().generate(cleaned)
+    return jsonify(result)
 
 
 # US19 AC2/AC4: Supervisor-only endpoint for testing role-based access control.

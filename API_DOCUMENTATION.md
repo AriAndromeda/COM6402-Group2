@@ -243,7 +243,67 @@ This confirms that the Flask application responds.
 It does not verify database connectivity,
 database integrity or external service availability.
 
-## 10. Running Automated Tests
+## 10. LLM Adapter (US13 – Sprint 1 attempt)
+
+Configurable adapter for mock or OpenAI-compatible providers.
+Credentials are read from environment variables and are never
+returned in API responses.
+
+**Privacy:** Only fictional Heat Shield case text may be sent to an
+external LLM. Do not submit real personal or confidential records.
+Live external calls also require `HEATSHIELD_LLM_ALLOW_EXTERNAL=true`.
+
+Environment variables:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| HEATSHIELD_LLM_PROVIDER | `mock` or `openai` | `mock` |
+| HEATSHIELD_LLM_API_KEY | Provider API key (keep secret) | empty |
+| HEATSHIELD_LLM_MODEL | Model name for live provider | `gpt-4o-mini` |
+| HEATSHIELD_LLM_BASE_URL | OpenAI-compatible base URL | `https://api.openai.com/v1` |
+| HEATSHIELD_LLM_ALLOW_EXTERNAL | Must be `true` to enable live provider calls | `false` |
+
+### Status
+
+Endpoint: GET /api/llm/status
+
+Successful response (200 OK):
+
+```json
+{
+  "provider": "mock",
+  "model": "mock",
+  "configured": true,
+  "mode": "mock",
+  "allow_external": false,
+  "privacy_note": "Only fictional Heat Shield case text may be sent to external LLM providers. Set HEATSHIELD_LLM_ALLOW_EXTERNAL=true to enable live calls."
+}
+```
+
+### Generate
+
+Endpoint: POST /api/llm/generate
+
+Requires staff Bearer authentication (`Authorization: Bearer <token>`).
+
+Required JSON field: `prompt` (non-empty, maximum 2000 characters).
+
+Example:
+
+```json
+{ "prompt": "What advice should staff give during a heatwave?" }
+```
+
+Successful response (200 OK) returns `provider`, `mode`, `model`,
+`simulated`, `is_live` and `text`.
+
+On rate limits, timeouts, provider errors, or when external calls are
+disabled, the adapter falls back to mock mode. Fallback responses set
+`simulated` to true, include `fallback_reason`, and prefix `text` with
+`[SIMULATED / MOCK FALLBACK]` so mock output is never mistaken for a
+live model reply.
+
+## 11. Running Automated Tests
 
 Install dependencies:
 
@@ -257,12 +317,17 @@ Run US05 tests only:
 
 python -m pytest tests/test_us05.py -v
 
-## 11. Limitations
+Run US13 tests only:
+
+python -m pytest tests/test_us13.py -v
+
+## 12. Limitations
 
 This is a local development API.
 
-Authentication and authorisation are not yet implemented.
 Only fictional information should be used.
+The LLM adapter defaults to mock mode for local demos;
+live providers require a secret API key in the environment.
 
 Further validation, integration and security testing
 will be required before production deployment.

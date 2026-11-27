@@ -28,6 +28,10 @@ A staff dashboard for managing cooling-centre support requests. The application 
 | `/api/centres/<id>` | GET | Get a single centre |
 | `/api/bookings` | POST | Book spaces at a centre (reduces `spaces_available`) |
 | `/api/bookings/<id>` | GET | Get a booking by ID |
+| `/api/llm/status` | GET | LLM adapter status (provider/mode; never returns API keys) |
+| `/api/llm/generate` | POST | Staff-only advice generation via mock or OpenAI-compatible provider |
+
+**LLM adapter (US13):** defaults to safe **mock** mode. Optional live provider via `HEATSHIELD_LLM_*` env vars (requires `HEATSHIELD_LLM_ALLOW_EXTERNAL=true`). `/api/llm/generate` needs staff Bearer auth. Prompts max 2000 chars; fictional case text only. Rate limits / errors fall back to clearly labelled mock output. See `API_DOCUMENTATION.md`.
 
 **Models:**
 

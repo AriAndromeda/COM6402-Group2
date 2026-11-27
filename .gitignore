@@ -1,7 +1,9 @@
 # Python
 *.pyc
 __pycache__/
+.env
 .env/
+*.env
 instance/
 
 # Django
