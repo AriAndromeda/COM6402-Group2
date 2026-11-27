@@ -249,6 +249,10 @@ Configurable adapter for mock or OpenAI-compatible providers.
 Credentials are read from environment variables and are never
 returned in API responses.
 
+**Privacy:** Only fictional Heat Shield case text may be sent to an
+external LLM. Do not submit real personal or confidential records.
+Live external calls also require `HEATSHIELD_LLM_ALLOW_EXTERNAL=true`.
+
 Environment variables:
 
 | Variable | Purpose | Default |
@@ -257,6 +261,7 @@ Environment variables:
 | HEATSHIELD_LLM_API_KEY | Provider API key (keep secret) | empty |
 | HEATSHIELD_LLM_MODEL | Model name for live provider | `gpt-4o-mini` |
 | HEATSHIELD_LLM_BASE_URL | OpenAI-compatible base URL | `https://api.openai.com/v1` |
+| HEATSHIELD_LLM_ALLOW_EXTERNAL | Must be `true` to enable live provider calls | `false` |
 
 ### Status
 
@@ -269,7 +274,9 @@ Successful response (200 OK):
   "provider": "mock",
   "model": "mock",
   "configured": true,
-  "mode": "mock"
+  "mode": "mock",
+  "allow_external": false,
+  "privacy_note": "Only fictional Heat Shield case text may be sent to external LLM providers. Set HEATSHIELD_LLM_ALLOW_EXTERNAL=true to enable live calls."
 }
 ```
 
@@ -277,7 +284,9 @@ Successful response (200 OK):
 
 Endpoint: POST /api/llm/generate
 
-Required JSON field: `prompt`
+Requires staff Bearer authentication (`Authorization: Bearer <token>`).
+
+Required JSON field: `prompt` (non-empty, maximum 2000 characters).
 
 Example:
 
@@ -285,9 +294,14 @@ Example:
 { "prompt": "What advice should staff give during a heatwave?" }
 ```
 
-Successful response (200 OK) returns `provider`, `mode`, `model`
-and `text`. On rate limits or provider errors the adapter falls
-back to mock mode and may include `fallback_reason`.
+Successful response (200 OK) returns `provider`, `mode`, `model`,
+`simulated`, `is_live` and `text`.
+
+On rate limits, timeouts, provider errors, or when external calls are
+disabled, the adapter falls back to mock mode. Fallback responses set
+`simulated` to true, include `fallback_reason`, and prefix `text` with
+`[SIMULATED / MOCK FALLBACK]` so mock output is never mistaken for a
+live model reply.
 
 ## 11. Running Automated Tests
 
