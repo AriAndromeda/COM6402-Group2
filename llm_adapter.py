@@ -109,6 +109,9 @@ class LlmAdapter:
 
     def generate(self, prompt: str) -> dict[str, Any]:
         """Return generated text. Falls back to mock on missing key / errors / 429."""
+        # TODO(US13 follow-up): prompts are length-checked only. Dedicated
+        # prompt-injection controls (instruction isolation / allowlists) are
+        # out of Sprint 1 scope; staff auth + mock-by-default reduce exposure.
         cleaned = (prompt or "").strip()
         if not cleaned:
             raise ValueError("prompt is required")
@@ -223,6 +226,8 @@ class LlmAdapter:
         }
 
 
+# Fine for local/dev. In a multi-threaded production process this cache can
+# keep a stale LlmConfig after env vars change; clear or rebuild if that matters.
 @lru_cache(maxsize=1)
 def get_adapter() -> LlmAdapter:
     """Cached adapter built from the current process environment."""
