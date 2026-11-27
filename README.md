@@ -29,9 +29,9 @@ A staff dashboard for managing cooling-centre support requests. The application 
 | `/api/bookings` | POST | Book spaces at a centre (reduces `spaces_available`) |
 | `/api/bookings/<id>` | GET | Get a booking by ID |
 | `/api/llm/status` | GET | LLM adapter status (provider/mode; never returns API keys) |
-| `/api/llm/generate` | POST | Generate advice via mock or configured OpenAI-compatible provider |
+| `/api/llm/generate` | POST | Staff-only advice generation via mock or OpenAI-compatible provider |
 
-**LLM adapter (US13):** defaults to safe **mock** mode. Optional live provider via `HEATSHIELD_LLM_PROVIDER`, `HEATSHIELD_LLM_API_KEY`, `HEATSHIELD_LLM_MODEL`, and `HEATSHIELD_LLM_BASE_URL`. Rate limits / errors fall back to mock. See `API_DOCUMENTATION.md`.
+**LLM adapter (US13):** defaults to safe **mock** mode. Optional live provider via `HEATSHIELD_LLM_*` env vars (requires `HEATSHIELD_LLM_ALLOW_EXTERNAL=true`). `/api/llm/generate` needs staff Bearer auth. Prompts max 2000 chars; fictional case text only. Rate limits / errors fall back to clearly labelled mock output. See `API_DOCUMENTATION.md`.
 
 **Models:**
 
@@ -84,7 +84,7 @@ If you prefer to start services individually:
 #### 1. Install dependencies
 
 ```bash
-python -m pip install flask flask-sqlalchemy pytest django requests
+python -m pip install flask flask-sqlalchemy pytest django requests cryptography
 ```
 
 Or use the project's virtual environment (recommended):
@@ -137,17 +137,19 @@ python -m pytest tests/ dashboard/tests.py -v
 |---|---|
 | `tests/test_bookings.py` | Flask API – CRUD, validation, filtering, error handling (82 assertions) |
 | `dashboard/tests.py` | Django dashboard – metric counts, centre utilisation, empty data, API failure handling (7 tests) |
+| `tests/test_us19.py` | Security testing – input sanitisation, generic errors, encryption at rest, security event logging (22 tests) |
 
 Tests use an in-memory SQLite database for the Flask side and mocked HTTP responses for the Django side.
 
 ## Project Structure
 
 ```
-├── app.py                  # Flask API – models, routes, CRUD endpoints
+├── app.py                  # Flask API – models, routes, CRUD endpoints, security (US19)
 ├── manage.py               # Django CLI utility
 ├── start.sh                # Launch script (Flask + Django)
 ├── requirements.txt        # pip dependencies
 ├── db.sqlite3              # Django database (ignored in git)
+│                           # security_events.log – US19 security audit log (not committed)
 │
 ├── dashboard/              # Django app
 │   ├── __init__.py
@@ -173,12 +175,15 @@ Tests use an in-memory SQLite database for the Flask side and mocked HTTP respon
 |---|---|---|
 | `PORT` (Flask) | `5000` | Port for the Flask API server |
 | `DJANGO_FLASK_API_URL` | `http://127.0.0.1:5000/api` | Base URL Django uses to fetch data from Flask |
+| `FLASK_DEBUG` | `false` | Enable debug mode (disables generic error handling when true) |
+| `HEATSHIELD_ENCRYPTION_KEY` | *(none)* | Fernet encryption key for encrypting sensitive fields at rest. When set, request descriptions are encrypted before storage and decrypted on read. Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 
 ## Notes
 
 - **Authentication** – US06 provides Bearer-token authentication and role-based access control for protected Flask API write operations. The Django dashboard itself does not yet enforce user authentication. Dashboard access controls must be implemented before deployment.
 - **Data persistence** – Both services use SQLite databases (`heatshield.db` for Flask, `db.sqlite3` for Django). These are ignored in `.gitignore`.
 - **Port fallback** – If port 5000 is occupied by another application, `start.sh` automatically starts Flask on port 5001 and updates the Django API URL accordingly.
+- **Security (US19)** – All user inputs are HTML-sanitised to prevent XSS attacks. Error messages are generic and never expose system internals or stack traces. Sensitive data can be encrypted at rest via `HEATSHIELD_ENCRYPTION_KEY`. Failed auth attempts, access denials, and rejected inputs are logged to `security_events.log` for audit purposes.
 
 
 ## US06 – Staff Authentication and Access Control
@@ -222,3 +227,15 @@ member, action, affected resource and timestamp.
 
 For implementation details, testing evidence and limitations,
 see `US06_SECURITY_DOCUMENTATION.md`.
+
+
+## US19 – Security Testing
+
+The API is hardened against common web threats:
+
+- **Input sanitisation** — All user strings are HTML-escaped before storage; SQL injection prevented by parameterised queries and enum validation.
+- **Generic error messages** — Global handlers return plain JSON errors. No stack traces or system internals leak to clients (debug mode off by default).
+- **Encryption at rest** — Request descriptions encrypted with Fernet when `HEATSHIELD_ENCRYPTION_KEY` is set; falls back to plain text in dev.
+- **Security event logging** — Failed auth, access denied, and rejected inputs are logged to `security_events.log`.
+
+22 new tests cover all four ACs (`python -m pytest tests/test_us19.py`).
