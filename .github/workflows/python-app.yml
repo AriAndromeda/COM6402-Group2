@@ -35,7 +35,7 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: Test with pytest and generate coverage report
         run: |
-          python -m pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing
+          python -m pytest test/ dashboard/tests.py --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing
       - name: Upload coverage reports to GitHub Actions Artifacts
         uses: actions/upload-artifact@v4
         if: always()
