@@ -2,13 +2,18 @@
 
 import logging
 import os
+import re
 from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
-from django.shortcuts import render
+from django.http import Http404
+from django.shortcuts import redirect, render
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 
 logger = logging.getLogger(__name__)
+ALLOWED_REQUEST_STATUSES = ("new", "in progress", "completed")
 
 # Base URL for the Flask backend API (readable via DJANGO_FLASK_API_URL env var).
 API_BASE = os.environ.get(
@@ -26,7 +31,6 @@ def _get_json(path):
     except (requests.RequestException, ValueError):
         logger.warning("Flask API unreachable at %s%s", API_BASE, path)
     return []
-
 
 def _requests_path(status="", priority="", area="", category=""):
     """Build /requests path with optional Flask filter query params (US07b)."""
@@ -56,15 +60,15 @@ def _apply_search(requests_data, query):
         or needle == str(row.get("id", ""))
     ]
 
-
+@login_required
 def index(request):
-    """Render the staff dashboard with request metrics and centre availability.
-
-    .. note::
-       Authentication is not implemented yet (see US08). Anyone who can reach
-       this URL sees all support-request data. Add auth before any deployment.
-    """
-
+    """Render the searchable Heat Shield dashboard for authorised staff."""
+    if not request.user.groups.filter(
+        name="Heat Shield Staff"
+    ).exists():
+        raise PermissionDenied(
+            "You are not authorised to access the Heat Shield dashboard."
+        )
     # US07b filter / search inputs (GET form on the dashboard).
     status = request.GET.get("status", "")
     priority = request.GET.get("priority", "")
@@ -74,7 +78,6 @@ def index(request):
         isinstance(value, str) and value.strip()
         for value in (status, priority, area, search_query)
     )
-
     # Metrics stay based on the full queue (US07a behaviour).
     all_requests = _get_json("/requests")
     if not isinstance(all_requests, list):
@@ -158,3 +161,110 @@ def index(request):
     }
 
     return render(request, "dashboard/index.html", context)
+
+
+def get_staff_api_token(user):
+    """Retrieve a staff-specific API credential from the environment."""
+
+    if not user.is_authenticated or not user.is_active:
+        return None
+
+    if not user.groups.filter(
+        name="Heat Shield Staff"
+    ).exists():
+        return None
+
+    # Require canonical usernames to avoid ambiguous mappings.
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,79}", user.username):
+        return None
+
+    variable_name = (
+        f"HEATSHIELD_API_TOKEN_{user.username.upper()}"
+    )
+
+    return os.environ.get(variable_name)
+
+def update_request_status(user, request_id, new_status):
+    """Update a support request through the authenticated Flask API."""
+
+    if new_status not in ALLOWED_REQUEST_STATUSES:
+        return False, "Invalid request status."
+
+    token = get_staff_api_token(user)
+
+    if not token:
+        return False, "Staff API authorisation is unavailable."
+
+    try:
+        response = requests.patch(
+            f"{API_BASE}/requests/{request_id}",
+            json={"status": new_status},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+
+    except requests.RequestException:
+        logger.exception("Flask API status update failed")
+        return False, "Unable to contact the support request service."
+
+    if response.status_code == 200:
+        return True, "Request status updated successfully."
+
+    if response.status_code in (401, 403):
+        return False, "You are not authorised to update this request."
+
+    if response.status_code == 404:
+        return False, "Support request not found."
+
+    if response.status_code == 400:
+        return False, "The requested status was rejected."
+
+    return False, "Unable to update the request."
+
+
+@login_required
+def request_detail(request, request_id):
+    """Display and update a support request for authorised staff."""
+
+    if not request.user.groups.filter(
+        name="Heat Shield Staff"
+    ).exists():
+        raise PermissionDenied(
+            "You are not authorised to manage support requests."
+        )
+
+    error_message = None
+
+    if request.method == "POST":
+        new_status = request.POST.get("status", "").strip()
+
+        success, message = update_request_status(
+            request.user,
+            request_id,
+            new_status,
+        )
+
+        if success:
+            return redirect(
+                "dashboard:request_detail",
+                request_id=request_id,
+            )
+
+        error_message = message
+
+    support_request = _get_json(f"/requests/{request_id}")
+
+    if not isinstance(support_request, dict):
+        raise Http404("Support request not found")
+
+    context = {
+        "support_request": support_request,
+        "allowed_statuses": ALLOWED_REQUEST_STATUSES,
+        "error_message": error_message,
+    }
+
+    return render(
+        request,
+        "dashboard/request_detail.html",
+        context,
+    )

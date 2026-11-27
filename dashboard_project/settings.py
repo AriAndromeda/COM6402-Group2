@@ -126,3 +126,6 @@ STATIC_URL = 'static/'
 #         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
 #     },
 # }
+# US07c - Staff authentication settings
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/"
