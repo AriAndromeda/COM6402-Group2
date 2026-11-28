@@ -303,7 +303,53 @@ disabled, the adapter falls back to mock mode. Fallback responses set
 `[SIMULATED / MOCK FALLBACK]` so mock output is never mistaken for a
 live model reply.
 
-## 11. Running Automated Tests
+## 11. AI Triage Draft (US08a)
+
+Endpoint: POST /api/requests/{id}/triage
+
+Requires staff Bearer authentication (`Authorization: Bearer <token>`).
+
+Generates a structured **draft** suggestion for staff review:
+
+- `summary`
+- `category`
+- `priority`
+- `rationale`
+- `support_option`
+
+The response always sets `draft: true`, `applied: false` and
+`status: "pending_review"`. Triage **does not** change the stored
+support request. Incomplete or very short descriptions are flagged with
+`suggestion.incomplete: true` and do not invent missing personal details.
+
+Example successful response (200 OK):
+
+```json
+{
+  "request_id": 1,
+  "draft": true,
+  "status": "pending_review",
+  "applied": false,
+  "request_unchanged": true,
+  "suggestion": {
+    "summary": "Heat Shield case in Bolton: ...",
+    "category": "cooling",
+    "priority": "high",
+    "rationale": "...",
+    "support_option": "Offer booking at a nearby cooling centre",
+    "incomplete": false,
+    "missing_fields": [],
+    "draft": true,
+    "status": "pending_review",
+    "applied": false
+  },
+  "review_note": "Draft only — staff must review before any category, priority, or support action is confirmed."
+}
+```
+
+Staff accept/reject UI and draft isolation are covered by later US08 cards.
+
+## 12. Running Automated Tests
 
 Install dependencies:
 
@@ -321,7 +367,11 @@ Run US13 tests only:
 
 python -m pytest tests/test_us13.py -v
 
-## 12. Limitations
+Run US08a tests only:
+
+python -m pytest tests/test_us08a.py -v
+
+## 13. Limitations
 
 This is a local development API.
 
