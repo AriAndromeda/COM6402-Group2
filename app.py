@@ -36,6 +36,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import update
 
 from llm_adapter import get_adapter
+from triage import generate_triage_draft
 
 # US19: Security configuration and logging setup.
 logging.basicConfig(level=logging.INFO)
@@ -922,6 +923,88 @@ def llm_generate():
 
     result = get_adapter().generate(cleaned)
     return jsonify(result)
+
+
+# US08a – AI triage draft (staff review only; never auto-applies).
+@app.post("/api/requests/<int:request_id>/triage")
+@require_staff("staff", "supervisor")
+def triage_support_request(request_id):
+    """Generate an AI triage *draft* for a support request.
+
+    Returns summary, category, priority, rationale and support option for
+    staff review. Does not modify the stored support request.
+    """
+    record = db.session.get(SupportRequest, request_id)
+    if record is None:
+        return jsonify({"error": "Support request not found"}), 404
+
+    # Snapshot fields before triage so tests can prove nothing was applied.
+    before = {
+        "description": record.description,
+        "category": record.category,
+        "area": record.area,
+        "priority": record.priority,
+        "status": record.status,
+        "updated_at": str(record.updated_at),
+    }
+
+    draft_input = {
+        "description": decrypt_field(record.description),
+        "category": record.category,
+        "area": decrypt_field(record.area),
+        "priority": record.priority,
+        "status": record.status,
+    }
+    suggestion = generate_triage_draft(draft_input)
+
+    # Re-load and confirm the persisted row is unchanged.
+    db.session.refresh(record)
+    after = {
+        "description": record.description,
+        "category": record.category,
+        "area": record.area,
+        "priority": record.priority,
+        "status": record.status,
+        "updated_at": str(record.updated_at),
+    }
+    unchanged = before == after
+
+    # Provider/mode/simulated come from the adapter call inside triage — not
+    # from a separate status lookup that could disagree with how the draft
+    # was actually produced.
+    return jsonify({
+        "request_id": record.id,
+        "draft": True,
+        "status": "pending_review",
+        "applied": False,
+        "request_unchanged": unchanged,
+        "suggestion": {
+            key: suggestion[key]
+            for key in (
+                "summary",
+                "category",
+                "priority",
+                "rationale",
+                "support_option",
+                "incomplete",
+                "missing_fields",
+                "draft",
+                "status",
+                "applied",
+            )
+            if key in suggestion
+        },
+        "provider": suggestion.get("provider"),
+        "mode": suggestion.get("mode"),
+        "model": suggestion.get("model"),
+        "simulated": suggestion.get("simulated"),
+        "is_live": suggestion.get("is_live"),
+        "generation_path": suggestion.get("generation_path"),
+        "review_note": (
+            "Draft only — staff must review before any category, priority, "
+            "or support action is confirmed."
+        ),
+    })
 
 
 # US19 AC2/AC4: Supervisor-only endpoint for testing role-based access control.

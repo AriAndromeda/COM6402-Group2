@@ -303,7 +303,67 @@ disabled, the adapter falls back to mock mode. Fallback responses set
 `[SIMULATED / MOCK FALLBACK]` so mock output is never mistaken for a
 live model reply.
 
-## 11. Running Automated Tests
+## 11. AI Triage Draft (US08a)
+
+Endpoint: POST /api/requests/{id}/triage
+
+Requires staff Bearer authentication (`Authorization: Bearer <token>`).
+
+Generates a structured **draft** suggestion for staff review via the
+US13 LLM adapter (mock by default):
+
+- `summary`
+- `category`
+- `priority`
+- `rationale`
+- `support_option`
+
+The response always sets `draft: true`, `applied: false` and
+`status: "pending_review"`. Triage **does not** change the stored
+support request. Incomplete or very short descriptions are flagged with
+`suggestion.incomplete: true` and do not invent missing personal details.
+
+`provider`, `mode`, `model`, `simulated` and `is_live` reflect the
+adapter call that produced the draft. `generation_path` explains whether
+the structured fields came from adapter JSON (`llm_adapter_json`), a
+structured fallback after a non-JSON adapter reply
+(`llm_adapter_structured_fallback`), or the incomplete-input guard
+(`incomplete_guard`).
+
+Example successful response (200 OK):
+
+```json
+{
+  "request_id": 1,
+  "draft": true,
+  "status": "pending_review",
+  "applied": false,
+  "request_unchanged": true,
+  "suggestion": {
+    "summary": "Heat Shield case in Bolton: ...",
+    "category": "cooling",
+    "priority": "high",
+    "rationale": "...",
+    "support_option": "Offer booking at a nearby cooling centre",
+    "incomplete": false,
+    "missing_fields": [],
+    "draft": true,
+    "status": "pending_review",
+    "applied": false
+  },
+  "provider": "mock",
+  "mode": "mock",
+  "model": "mock",
+  "simulated": true,
+  "is_live": false,
+  "generation_path": "llm_adapter_json",
+  "review_note": "Draft only — staff must review before any category, priority, or support action is confirmed."
+}
+```
+
+Staff accept/reject UI and draft isolation are covered by later US08 cards.
+
+## 12. Running Automated Tests
 
 Install dependencies:
 
@@ -321,7 +381,11 @@ Run US13 tests only:
 
 python -m pytest tests/test_us13.py -v
 
-## 12. Limitations
+Run US08a tests only:
+
+python -m pytest tests/test_us08a.py -v
+
+## 13. Limitations
 
 This is a local development API.
 

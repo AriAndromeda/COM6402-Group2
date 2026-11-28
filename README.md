@@ -30,8 +30,11 @@ A staff dashboard for managing cooling-centre support requests. The application 
 | `/api/bookings/<id>` | GET | Get a booking by ID |
 | `/api/llm/status` | GET | LLM adapter status (provider/mode; never returns API keys) |
 | `/api/llm/generate` | POST | Staff-only advice generation via mock or OpenAI-compatible provider |
+| `/api/requests/<id>/triage` | POST | Staff-only AI triage **draft** (summary/category/priority/rationale/support option; does not auto-apply) |
 
 **LLM adapter (US13):** defaults to safe **mock** mode. Optional live provider via `HEATSHIELD_LLM_*` env vars (requires `HEATSHIELD_LLM_ALLOW_EXTERNAL=true`). `/api/llm/generate` needs staff Bearer auth. Prompts max 2000 chars; fictional case text only. Rate limits / errors fall back to clearly labelled mock output. See `API_DOCUMENTATION.md`.
+
+**AI triage (US08a):** `POST /api/requests/<id>/triage` returns a structured draft for staff review only. It never updates the stored request automatically. Incomplete cases are flagged instead of inventing details.
 
 **Models:**
 

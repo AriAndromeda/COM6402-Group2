@@ -162,13 +162,21 @@ class LlmAdapter:
             return result
 
     def _mock_result(self, prompt: str) -> dict[str, Any]:
+        text = MOCK_ADVICE
+        # US08a triage prompts ask for JSON; keep that path inside the adapter
+        # so mock mode still exercises the same generate() entry point as live.
+        if "HEATSHIELD_TRIAGE_JSON" in (prompt or ""):
+            from triage import mock_triage_completion_text
+
+            text = mock_triage_completion_text(prompt)
+
         return {
             "provider": "mock",
             "mode": "mock",
             "model": "mock",
             "simulated": True,
             "is_live": False,
-            "text": MOCK_ADVICE,
+            "text": text,
             "prompt_echo": prompt[:200],
         }
 
