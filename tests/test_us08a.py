@@ -1,10 +1,12 @@
-"""US08a – AI triage draft generation (staff review only)."""
+"""US08a – AI triage draft generation via the US13 LLM adapter."""
 
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
 
 from app import SupportRequest, db
+from llm_adapter import LlmAdapter, LlmConfig, get_adapter
 from triage import generate_triage_draft
 
 
@@ -30,6 +32,13 @@ def _create_request(
     return row
 
 
+@pytest.fixture(autouse=True)
+def _clear_adapter_cache():
+    get_adapter.cache_clear()
+    yield
+    get_adapter.cache_clear()
+
+
 class TestTriageDraftHelper:
     def test_structured_fields_present_for_complete_request(self):
         draft = generate_triage_draft(
@@ -40,12 +49,18 @@ class TestTriageDraftHelper:
                 "category": "cooling",
                 "area": "Bolton",
                 "priority": "medium",
-            }
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
         )
         assert draft["draft"] is True
         assert draft["applied"] is False
         assert draft["status"] == "pending_review"
         assert draft["incomplete"] is False
+        assert draft["provider"] == "mock"
+        assert draft["mode"] == "mock"
+        assert draft["simulated"] is True
+        assert draft["is_live"] is False
+        assert draft["generation_path"] == "llm_adapter_json"
         assert draft["category"] in {
             "welfare",
             "cooling",
@@ -57,38 +72,187 @@ class TestTriageDraftHelper:
         assert draft["rationale"]
         assert draft["support_option"]
 
+    def test_uses_llm_adapter_generate(self):
+        adapter = MagicMock(spec=LlmAdapter)
+        adapter.generate.return_value = {
+            "provider": "mock",
+            "mode": "mock",
+            "model": "mock",
+            "simulated": True,
+            "is_live": False,
+            "text": (
+                '{"summary":"Heat case","category":"cooling","priority":"high",'
+                '"rationale":"heat cues","support_option":"Offer cooling centre"}'
+            ),
+        }
+        draft = generate_triage_draft(
+            {
+                "description": "Needs cooling during heatwave in Farnworth",
+                "category": "cooling",
+                "area": "Farnworth",
+                "priority": "medium",
+            },
+            adapter=adapter,
+        )
+        adapter.generate.assert_called_once()
+        prompt = adapter.generate.call_args.args[0]
+        assert "HEATSHIELD_TRIAGE_JSON" in prompt
+        assert draft["generation_path"] == "llm_adapter_json"
+        assert draft["provider"] == "mock"
+        assert draft["category"] == "cooling"
+        assert draft["priority"] == "high"
+
     def test_incomplete_request_does_not_invent_details(self):
+        adapter = MagicMock(spec=LlmAdapter)
+        adapter.public_status.return_value = {
+            "provider": "mock",
+            "model": "mock",
+            "mode": "mock",
+        }
         draft = generate_triage_draft(
             {
                 "description": "help",
                 "category": "cooling",
                 "area": "Bolton",
                 "priority": "medium",
-            }
+            },
+            adapter=adapter,
         )
+        adapter.generate.assert_not_called()
         assert draft["incomplete"] is True
         assert draft["applied"] is False
-        assert "invent" not in draft["rationale"].lower() or "not invented" in draft[
-            "rationale"
-        ].lower() or "No extra" in draft["rationale"]
-        # Must not fabricate a specific medical history or named person.
+        assert draft["generation_path"] == "incomplete_guard"
+        assert draft["simulated"] is True
         banned = ("john", "nhs number", "diagnosed", "made up")
         blob = " ".join(
-            [
-                draft["summary"],
-                draft["rationale"],
-                draft["support_option"],
-            ]
+            [draft["summary"], draft["rationale"], draft["support_option"]]
         ).lower()
         assert not any(word in blob for word in banned)
         assert "more information" in draft["support_option"].lower()
 
     def test_missing_required_fields_flagged(self):
-        draft = generate_triage_draft({"description": "", "category": "", "area": ""})
+        adapter = MagicMock(spec=LlmAdapter)
+        adapter.public_status.return_value = {
+            "provider": "mock",
+            "model": "mock",
+            "mode": "mock",
+        }
+        draft = generate_triage_draft(
+            {"description": "", "category": "", "area": ""},
+            adapter=adapter,
+        )
         assert draft["incomplete"] is True
         assert "description" in draft["missing_fields"]
         assert "category" in draft["missing_fields"]
         assert "area" in draft["missing_fields"]
+
+    def test_not_urgent_is_not_treated_as_critical(self):
+        draft = generate_triage_draft(
+            {
+                "description": (
+                    "Resident needs a cooling centre but this is not urgent"
+                ),
+                "category": "cooling",
+                "area": "Bolton",
+                "priority": "medium",
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
+        )
+        assert draft["priority"] != "critical"
+        assert draft["priority"] in {"low", "medium", "high"}
+
+    def test_medical_and_practical_branches(self):
+        medical = generate_triage_draft(
+            {
+                "description": "Chest pain and needs a doctor during the heatwave",
+                "category": "welfare",
+                "area": "Bolton",
+                "priority": "medium",
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
+        )
+        assert medical["category"] == "medical"
+
+        practical = generate_triage_draft(
+            {
+                "description": (
+                    "Needs transport and food shopping help for daily living"
+                ),
+                "category": "welfare",
+                "area": "Horwich",
+                "priority": "medium",
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
+        )
+        assert practical["category"] == "practical-assistance"
+
+    def test_welfare_low_priority_and_fallback_category(self):
+        welfare = generate_triage_draft(
+            {
+                "description": (
+                    "Vulnerable neighbour is alone and needs a welfare check soon"
+                ),
+                "category": "cooling",
+                "area": "Bolton",
+                "priority": "medium",
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
+        )
+        assert welfare["category"] == "welfare"
+
+        low = generate_triage_draft(
+            {
+                "description": (
+                    "Minor heat discomfort, low priority when possible please"
+                ),
+                "category": "cooling",
+                "area": "Bolton",
+                "priority": "high",
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
+        )
+        assert low["priority"] == "low"
+
+        fallback = generate_triage_draft(
+            {
+                "description": (
+                    "General assistance request with enough detail for triage"
+                ),
+                "category": "practical-assistance",
+                "area": "Bolton",
+                "priority": "medium",
+            },
+            adapter=LlmAdapter(LlmConfig(provider="mock")),
+        )
+        assert fallback["category"] == "practical-assistance"
+
+    def test_invalid_request_data_raises(self):
+        with pytest.raises(ValueError, match="request_data must be an object"):
+            generate_triage_draft("not-a-dict")  # type: ignore[arg-type]
+
+    def test_malformed_adapter_json_uses_structured_fallback(self):
+        adapter = MagicMock(spec=LlmAdapter)
+        adapter.generate.return_value = {
+            "provider": "mock",
+            "mode": "mock",
+            "model": "mock",
+            "simulated": True,
+            "is_live": False,
+            "text": "not-json-at-all",
+        }
+        draft = generate_triage_draft(
+            {
+                "description": "Needs a cool space during the heatwave today",
+                "category": "cooling",
+                "area": "Bolton",
+                "priority": "medium",
+            },
+            adapter=adapter,
+        )
+        assert draft["generation_path"] == "llm_adapter_structured_fallback"
+        assert draft["provider"] == "mock"
+        assert draft["simulated"] is True
+        assert draft["draft"] is True
 
 
 class TestTriageEndpoint:
@@ -109,6 +273,10 @@ class TestTriageEndpoint:
         assert body["applied"] is False
         assert body["request_unchanged"] is True
         assert body["status"] == "pending_review"
+        assert body["provider"] == "mock"
+        assert body["mode"] == "mock"
+        assert body["simulated"] is True
+        assert body["generation_path"] == "llm_adapter_json"
         suggestion = body["suggestion"]
         for key in (
             "summary",
@@ -141,7 +309,6 @@ class TestTriageEndpoint:
         )
         assert resp.status_code == 200
         suggestion = resp.get_json()["suggestion"]
-        # Suggestion may differ from stored fields — that is fine for a draft.
         assert suggestion["draft"] is True
         assert suggestion["applied"] is False
 
@@ -152,7 +319,6 @@ class TestTriageEndpoint:
         assert row.status == before["status"]
         assert row.area == before["area"]
 
-        # GET still returns the original confirmed record.
         get_resp = client.get(f"/api/requests/{row.id}")
         assert get_resp.status_code == 200
         stored = get_resp.get_json()
@@ -170,6 +336,8 @@ class TestTriageEndpoint:
         body = resp.get_json()
         assert body["suggestion"]["incomplete"] is True
         assert body["applied"] is False
+        assert body["generation_path"] == "incomplete_guard"
+        assert body["simulated"] is True
 
         db.session.refresh(row)
         assert row.description == "?"

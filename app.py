@@ -969,17 +969,37 @@ def triage_support_request(request_id):
     }
     unchanged = before == after
 
-    llm_status = get_adapter().public_status()
+    # Provider/mode/simulated come from the adapter call inside triage — not
+    # from a separate status lookup that could disagree with how the draft
+    # was actually produced.
     return jsonify({
         "request_id": record.id,
         "draft": True,
         "status": "pending_review",
         "applied": False,
         "request_unchanged": unchanged,
-        "suggestion": suggestion,
-        "provider": llm_status.get("provider"),
-        "mode": llm_status.get("mode"),
-        "simulated": llm_status.get("mode") != "live",
+        "suggestion": {
+            key: suggestion[key]
+            for key in (
+                "summary",
+                "category",
+                "priority",
+                "rationale",
+                "support_option",
+                "incomplete",
+                "missing_fields",
+                "draft",
+                "status",
+                "applied",
+            )
+            if key in suggestion
+        },
+        "provider": suggestion.get("provider"),
+        "mode": suggestion.get("mode"),
+        "model": suggestion.get("model"),
+        "simulated": suggestion.get("simulated"),
+        "is_live": suggestion.get("is_live"),
+        "generation_path": suggestion.get("generation_path"),
         "review_note": (
             "Draft only — staff must review before any category, priority, "
             "or support action is confirmed."

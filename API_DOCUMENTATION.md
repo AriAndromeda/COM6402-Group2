@@ -309,7 +309,8 @@ Endpoint: POST /api/requests/{id}/triage
 
 Requires staff Bearer authentication (`Authorization: Bearer <token>`).
 
-Generates a structured **draft** suggestion for staff review:
+Generates a structured **draft** suggestion for staff review via the
+US13 LLM adapter (mock by default):
 
 - `summary`
 - `category`
@@ -321,6 +322,13 @@ The response always sets `draft: true`, `applied: false` and
 `status: "pending_review"`. Triage **does not** change the stored
 support request. Incomplete or very short descriptions are flagged with
 `suggestion.incomplete: true` and do not invent missing personal details.
+
+`provider`, `mode`, `model`, `simulated` and `is_live` reflect the
+adapter call that produced the draft. `generation_path` explains whether
+the structured fields came from adapter JSON (`llm_adapter_json`), a
+structured fallback after a non-JSON adapter reply
+(`llm_adapter_structured_fallback`), or the incomplete-input guard
+(`incomplete_guard`).
 
 Example successful response (200 OK):
 
@@ -343,6 +351,12 @@ Example successful response (200 OK):
     "status": "pending_review",
     "applied": false
   },
+  "provider": "mock",
+  "mode": "mock",
+  "model": "mock",
+  "simulated": true,
+  "is_live": false,
+  "generation_path": "llm_adapter_json",
   "review_note": "Draft only — staff must review before any category, priority, or support action is confirmed."
 }
 ```
